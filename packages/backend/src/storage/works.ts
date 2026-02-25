@@ -1,10 +1,7 @@
 import fs from "fs/promises";
-import path from "path";
-import type { Project, WorkMeta, WorkSnapshot } from "@viragen/shared";
+import type { WorkMeta, WorkSnapshot } from "@viragen/shared";
 import {
-  projectDir,
   workDir,
-  workJsonPath,
   referenceVideoPath,
   sceneImagePath,
   sceneVideoPath,
@@ -14,65 +11,60 @@ import {
   sceneVideoReadExtensions,
 } from "./path.js";
 import { getProject } from "./projects.js";
-
-const WORKS_INDEX = "works_index.json";
+import { WorkModel, toWorkSnapshot } from "../db/index.js";
 
 async function ensureDir(dir: string): Promise<void> {
   await fs.mkdir(dir, { recursive: true });
 }
 
-async function readWorksIndex(projectId: string): Promise<WorkMeta[]> {
-  const indexPath = path.join(projectDir(projectId), WORKS_INDEX);
-  try {
-    const raw = await fs.readFile(indexPath, "utf-8");
-    const data = JSON.parse(raw) as { works?: WorkMeta[] };
-    return Array.isArray(data?.works) ? data.works : [];
-  } catch {
-    return [];
-  }
-}
-
-async function writeWorksIndex(projectId: string, works: WorkMeta[]): Promise<void> {
-  await ensureDir(projectDir(projectId));
-  const indexPath = path.join(projectDir(projectId), WORKS_INDEX);
-  await fs.writeFile(
-    indexPath,
-    JSON.stringify({ works: works.sort((a, b) => b.updatedAt - a.updatedAt) }, null, 2),
-    "utf-8"
-  );
-}
-
 export async function listWorks(projectId: string): Promise<WorkMeta[]> {
-  return readWorksIndex(projectId);
+  const docs = await WorkModel.find({ projectId }).sort({ updatedAt: -1 }).lean();
+  return docs.map((doc) => ({
+    id: doc._id,
+    projectId: doc.projectId,
+    name: doc.name,
+    updatedAt: doc.updatedAt,
+  }));
 }
 
 export async function getWork(projectId: string, workId: string): Promise<WorkSnapshot | null> {
-  const p = workJsonPath(projectId, workId);
-  try {
-    const raw = await fs.readFile(p, "utf-8");
-    return JSON.parse(raw) as WorkSnapshot;
-  } catch {
-    return null;
-  }
+  const doc = await WorkModel.findOne({ _id: workId, projectId });
+  if (!doc) return null;
+  return toWorkSnapshot(doc);
 }
 
 export async function saveWork(projectId: string, snapshot: WorkSnapshot): Promise<void> {
   if (snapshot.projectId !== projectId) throw new Error("projectId mismatch");
   const dir = workDir(projectId, snapshot.id);
   await ensureDir(dir);
-  await fs.writeFile(workJsonPath(projectId, snapshot.id), JSON.stringify(snapshot, null, 2), "utf-8");
 
-  const works = await readWorksIndex(projectId);
-  const meta: WorkMeta = {
-    id: snapshot.id,
-    projectId,
-    name: snapshot.name,
-    updatedAt: snapshot.updatedAt,
-  };
-  const idx = works.findIndex((w) => w.id === snapshot.id);
-  if (idx >= 0) works[idx] = meta;
-  else works.unshift(meta);
-  await writeWorksIndex(projectId, works);
+  await WorkModel.findByIdAndUpdate(
+    snapshot.id,
+    {
+      _id: snapshot.id,
+      projectId: snapshot.projectId,
+      name: snapshot.name,
+      createdAt: snapshot.createdAt,
+      updatedAt: snapshot.updatedAt,
+      systemPrompt: snapshot.systemPrompt,
+      analyzerPrompt: snapshot.analyzerPrompt ?? "",
+      imageSystemPrompt: snapshot.imageSystemPrompt ?? "",
+      videoSystemPrompt: snapshot.videoSystemPrompt ?? "",
+      currentStep: snapshot.currentStep,
+      hasReferenceVideo: snapshot.hasReferenceVideo,
+      mode: snapshot.mode,
+      productName: snapshot.productName,
+      productDescription: snapshot.productDescription,
+      targetAudience: snapshot.targetAudience,
+      language: snapshot.language,
+      videoDuration: snapshot.videoDuration,
+      sceneCount: snapshot.sceneCount,
+      analysis: snapshot.analysis,
+      scenes: snapshot.scenes,
+      generatedScenes: snapshot.generatedScenes,
+    },
+    { upsert: true, new: true }
+  );
 }
 
 export async function createWork(projectId: string, name?: string): Promise<WorkSnapshot> {
@@ -115,8 +107,7 @@ export async function deleteWork(projectId: string, workId: string): Promise<voi
   } catch {
     // ignore
   }
-  const works = (await readWorksIndex(projectId)).filter((w) => w.id !== workId);
-  await writeWorksIndex(projectId, works);
+  await WorkModel.findOneAndDelete({ _id: workId, projectId });
 }
 
 export function getReferenceVideoPath(projectId: string, workId: string): string {
@@ -132,12 +123,8 @@ export function getSceneVideoPath(projectId: string, workId: string, index: numb
 }
 
 export async function workExists(projectId: string, workId: string): Promise<boolean> {
-  try {
-    await fs.access(workJsonPath(projectId, workId));
-    return true;
-  } catch {
-    return false;
-  }
+  const count = await WorkModel.countDocuments({ _id: workId, projectId });
+  return count > 0;
 }
 
 export async function resolveSceneImagePath(projectId: string, workId: string, index: number): Promise<string | null> {
@@ -166,4 +153,8 @@ export async function resolveSceneVideoPath(projectId: string, workId: string, i
     }
   }
   return null;
+}
+
+export async function deleteWorksByProject(projectId: string): Promise<void> {
+  await WorkModel.deleteMany({ projectId });
 }

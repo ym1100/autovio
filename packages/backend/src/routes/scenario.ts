@@ -5,8 +5,11 @@ import { ScenarioSceneSchema } from "@viragen/shared";
 import { z } from "zod";
 import { getLLMProvider } from "../providers/registry.js";
 import { getScenarioSystemPrompt, getScenarioUserPrompt } from "../prompts/scenario.js";
+import { authenticate, requireScope } from "../middleware/auth.js";
 
 const router = Router();
+
+router.use(authenticate);
 
 const RequestSchema = z.object({
   analysis: AnalysisResultSchema.optional(),
@@ -15,7 +18,7 @@ const RequestSchema = z.object({
   knowledge: z.string().optional(),
 });
 
-router.post("/", async (req, res, next) => {
+router.post("/", requireScope("ai:generate"), async (req, res, next) => {
   try {
     const providerId = req.headers["x-llm-provider"] as string || "gemini";
     const modelId = req.headers["x-model-id"] as string | undefined;

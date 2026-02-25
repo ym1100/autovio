@@ -1,6 +1,12 @@
 import type { Project, ProjectMeta, WorkSnapshot, WorkMeta } from "@viragen/shared";
+import { getAuthToken } from "../store/useAuthStore";
 
 const API = "/api/projects";
+
+function getAuthHeader(): Record<string, string> {
+  const token = getAuthToken();
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
 
 function workMediaUrl(
   projectId: string,
@@ -17,13 +23,13 @@ function workMediaUrl(
 // --- Projects ---
 
 export async function listProjects(): Promise<ProjectMeta[]> {
-  const res = await fetch(API);
+  const res = await fetch(API, { headers: getAuthHeader() });
   if (!res.ok) throw new Error("Failed to list projects");
   return res.json();
 }
 
 export async function getProject(id: string): Promise<Project | null> {
-  const res = await fetch(`${API}/${id}`);
+  const res = await fetch(`${API}/${id}`, { headers: getAuthHeader() });
   if (res.status === 404) return null;
   if (!res.ok) throw new Error("Failed to get project");
   return res.json();
@@ -32,7 +38,7 @@ export async function getProject(id: string): Promise<Project | null> {
 export async function saveProject(project: Project): Promise<void> {
   const res = await fetch(`${API}/${project.id}`, {
     method: "PUT",
-    headers: { "Content-Type": "application/json" },
+    headers: { ...getAuthHeader(), "Content-Type": "application/json" },
     body: JSON.stringify(project),
   });
   if (!res.ok) throw new Error("Failed to save project");
@@ -41,7 +47,7 @@ export async function saveProject(project: Project): Promise<void> {
 export async function createProject(name: string): Promise<Project> {
   const res = await fetch(API, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { ...getAuthHeader(), "Content-Type": "application/json" },
     body: JSON.stringify({ name: name || "New Project" }),
   });
   if (!res.ok) throw new Error("Failed to create project");
@@ -49,20 +55,20 @@ export async function createProject(name: string): Promise<Project> {
 }
 
 export async function deleteProject(id: string): Promise<void> {
-  const res = await fetch(`${API}/${id}`, { method: "DELETE" });
+  const res = await fetch(`${API}/${id}`, { method: "DELETE", headers: getAuthHeader() });
   if (!res.ok && res.status !== 404) throw new Error("Failed to delete project");
 }
 
 // --- Works ---
 
 export async function listWorks(projectId: string): Promise<WorkMeta[]> {
-  const res = await fetch(`${API}/${projectId}/works`);
+  const res = await fetch(`${API}/${projectId}/works`, { headers: getAuthHeader() });
   if (!res.ok) throw new Error("Failed to list works");
   return res.json();
 }
 
 export async function getWork(projectId: string, workId: string): Promise<WorkSnapshot | null> {
-  const res = await fetch(`${API}/${projectId}/works/${workId}`);
+  const res = await fetch(`${API}/${projectId}/works/${workId}`, { headers: getAuthHeader() });
   if (res.status === 404) return null;
   if (!res.ok) throw new Error("Failed to get work");
   return res.json();
@@ -71,7 +77,7 @@ export async function getWork(projectId: string, workId: string): Promise<WorkSn
 export async function saveWork(projectId: string, snapshot: WorkSnapshot): Promise<void> {
   const res = await fetch(`${API}/${projectId}/works/${snapshot.id}`, {
     method: "PUT",
-    headers: { "Content-Type": "application/json" },
+    headers: { ...getAuthHeader(), "Content-Type": "application/json" },
     body: JSON.stringify(snapshot),
   });
   if (!res.ok) throw new Error("Failed to save work");
@@ -80,7 +86,7 @@ export async function saveWork(projectId: string, snapshot: WorkSnapshot): Promi
 export async function createWork(projectId: string, name?: string): Promise<WorkSnapshot> {
   const res = await fetch(`${API}/${projectId}/works`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { ...getAuthHeader(), "Content-Type": "application/json" },
     body: JSON.stringify({ name: name || "New Work" }),
   });
   if (!res.ok) throw new Error("Failed to create work");
@@ -88,7 +94,7 @@ export async function createWork(projectId: string, name?: string): Promise<Work
 }
 
 export async function deleteWork(projectId: string, workId: string): Promise<void> {
-  const res = await fetch(`${API}/${projectId}/works/${workId}`, { method: "DELETE" });
+  const res = await fetch(`${API}/${projectId}/works/${workId}`, { method: "DELETE", headers: getAuthHeader() });
   if (!res.ok && res.status !== 404) throw new Error("Failed to delete work");
 }
 
@@ -99,6 +105,7 @@ export async function saveReferenceVideoBlob(projectId: string, workId: string, 
   form.append("video", blob, "reference.mp4");
   const res = await fetch(workMediaUrl(projectId, workId, "reference"), {
     method: "POST",
+    headers: getAuthHeader(),
     body: form,
   });
   if (!res.ok) throw new Error("Failed to save reference video");
@@ -109,7 +116,7 @@ export function getReferenceVideoUrl(projectId: string, workId: string): string 
 }
 
 export async function loadReferenceVideoBlob(projectId: string, workId: string): Promise<Blob | null> {
-  const res = await fetch(getReferenceVideoUrl(projectId, workId));
+  const res = await fetch(getReferenceVideoUrl(projectId, workId), { headers: getAuthHeader() });
   if (res.status === 404 || !res.ok) return null;
   return res.blob();
 }
@@ -124,6 +131,7 @@ export async function saveImageBlob(
   form.append("file", blob, `scene_${sceneIndex}_image`);
   const res = await fetch(workMediaUrl(projectId, workId, "scene", sceneIndex, "image"), {
     method: "POST",
+    headers: getAuthHeader(),
     body: form,
   });
   if (!res.ok) throw new Error("Failed to save image");
@@ -140,6 +148,7 @@ export async function saveVideoBlob(
   form.append("file", blob, `scene_${sceneIndex}_video`);
   const res = await fetch(workMediaUrl(projectId, workId, "scene", sceneIndex, "video"), {
     method: "POST",
+    headers: getAuthHeader(),
     body: form,
   });
   if (!res.ok) throw new Error("Failed to save video");
@@ -159,7 +168,7 @@ export async function loadImageUrl(
   workId: string,
   sceneIndex: number
 ): Promise<string | null> {
-  const res = await fetch(getSceneImageUrl(projectId, workId, sceneIndex));
+  const res = await fetch(getSceneImageUrl(projectId, workId, sceneIndex), { headers: getAuthHeader() });
   if (res.status === 404 || !res.ok) return null;
   return getSceneImageUrl(projectId, workId, sceneIndex);
 }
@@ -169,7 +178,7 @@ export async function loadVideoUrl(
   workId: string,
   sceneIndex: number
 ): Promise<string | null> {
-  const res = await fetch(getSceneVideoUrl(projectId, workId, sceneIndex));
+  const res = await fetch(getSceneVideoUrl(projectId, workId, sceneIndex), { headers: getAuthHeader() });
   if (res.status === 404 || !res.ok) return null;
   return getSceneVideoUrl(projectId, workId, sceneIndex);
 }

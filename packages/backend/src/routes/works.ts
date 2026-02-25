@@ -18,12 +18,15 @@ import {
 } from "../storage/works.js";
 import { projectExists } from "../storage/projects.js";
 import { workDir } from "../storage/path.js";
+import { authenticate, requireScope } from "../middleware/auth.js";
 
 const router = Router({ mergeParams: true });
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 500 * 1024 * 1024 },
 });
+
+router.use(authenticate);
 
 function getProjectId(req: Request): string {
   return String((req.params as { projectId?: string }).projectId ?? "");
@@ -34,10 +37,11 @@ function getWorkId(req: Request): string {
 }
 
 // List works
-router.get("/", async (req, res, next) => {
+router.get("/", requireScope("works:read"), async (req, res, next) => {
   try {
+    const userId = req.user!.id;
     const projectId = getProjectId(req);
-    if (!(await projectExists(projectId))) {
+    if (!(await projectExists(projectId, userId))) {
       res.status(404).json({ error: "Project not found" });
       return;
     }
@@ -49,10 +53,11 @@ router.get("/", async (req, res, next) => {
 });
 
 // Create work (copies project's systemPrompt)
-router.post("/", async (req, res, next) => {
+router.post("/", requireScope("works:write"), async (req, res, next) => {
   try {
+    const userId = req.user!.id;
     const projectId = getProjectId(req);
-    if (!(await projectExists(projectId))) {
+    if (!(await projectExists(projectId, userId))) {
       res.status(404).json({ error: "Project not found" });
       return;
     }
@@ -65,11 +70,12 @@ router.post("/", async (req, res, next) => {
 });
 
 // Get work
-router.get("/:workId", async (req, res, next) => {
+router.get("/:workId", requireScope("works:read"), async (req, res, next) => {
   try {
+    const userId = req.user!.id;
     const projectId = getProjectId(req);
     const workId = getWorkId(req);
-    if (!(await projectExists(projectId))) {
+    if (!(await projectExists(projectId, userId))) {
       res.status(404).json({ error: "Project not found" });
       return;
     }
@@ -85,8 +91,9 @@ router.get("/:workId", async (req, res, next) => {
 });
 
 // Save work
-router.put("/:workId", async (req, res, next) => {
+router.put("/:workId", requireScope("works:write"), async (req, res, next) => {
   try {
+    const userId = req.user!.id;
     const projectId = getProjectId(req);
     const workId = getWorkId(req);
     const snapshot = req.body as WorkSnapshot;
@@ -94,7 +101,7 @@ router.put("/:workId", async (req, res, next) => {
       res.status(400).json({ error: "ID mismatch" });
       return;
     }
-    if (!(await projectExists(projectId))) {
+    if (!(await projectExists(projectId, userId))) {
       res.status(404).json({ error: "Project not found" });
       return;
     }
@@ -110,11 +117,12 @@ router.put("/:workId", async (req, res, next) => {
 });
 
 // Delete work
-router.delete("/:workId", async (req, res, next) => {
+router.delete("/:workId", requireScope("works:write"), async (req, res, next) => {
   try {
+    const userId = req.user!.id;
     const projectId = getProjectId(req);
     const workId = getWorkId(req);
-    if (!(await projectExists(projectId))) {
+    if (!(await projectExists(projectId, userId))) {
       res.status(404).json({ error: "Project not found" });
       return;
     }
@@ -131,11 +139,12 @@ router.delete("/:workId", async (req, res, next) => {
 
 // --- Media ---
 
-router.post("/:workId/media/reference", upload.single("video"), async (req, res, next) => {
+router.post("/:workId/media/reference", requireScope("works:write"), upload.single("video"), async (req, res, next) => {
   try {
+    const userId = req.user!.id;
     const projectId = getProjectId(req);
     const workId = getWorkId(req);
-    if (!(await projectExists(projectId))) {
+    if (!(await projectExists(projectId, userId))) {
       res.status(404).json({ error: "Project not found" });
       return;
     }
@@ -157,10 +166,15 @@ router.post("/:workId/media/reference", upload.single("video"), async (req, res,
   }
 });
 
-router.get("/:workId/media/reference", async (req, res, next) => {
+router.get("/:workId/media/reference", requireScope("works:read"), async (req, res, next) => {
   try {
+    const userId = req.user!.id;
     const projectId = getProjectId(req);
     const workId = getWorkId(req);
+    if (!(await projectExists(projectId, userId))) {
+      res.status(404).json({ error: "Project not found" });
+      return;
+    }
     const dest = getReferenceVideoPath(projectId, workId);
     try {
       await fs.access(dest);
@@ -176,14 +190,19 @@ router.get("/:workId/media/reference", async (req, res, next) => {
   }
 });
 
-router.post("/:workId/media/scene/:index/image", upload.single("file"), async (req, res, next) => {
+router.post("/:workId/media/scene/:index/image", requireScope("works:write"), upload.single("file"), async (req, res, next) => {
   try {
+    const userId = req.user!.id;
     const projectId = getProjectId(req);
     const workId = getWorkId(req);
     const index = String(req.params.index ?? "0");
     const i = parseInt(index, 10);
     if (Number.isNaN(i) || i < 0) {
       res.status(400).json({ error: "Invalid scene index" });
+      return;
+    }
+    if (!(await projectExists(projectId, userId))) {
+      res.status(404).json({ error: "Project not found" });
       return;
     }
     if (!(await workExists(projectId, workId))) {
@@ -204,14 +223,19 @@ router.post("/:workId/media/scene/:index/image", upload.single("file"), async (r
   }
 });
 
-router.post("/:workId/media/scene/:index/video", upload.single("file"), async (req, res, next) => {
+router.post("/:workId/media/scene/:index/video", requireScope("works:write"), upload.single("file"), async (req, res, next) => {
   try {
+    const userId = req.user!.id;
     const projectId = getProjectId(req);
     const workId = getWorkId(req);
     const index = String(req.params.index ?? "0");
     const i = parseInt(index, 10);
     if (Number.isNaN(i) || i < 0) {
       res.status(400).json({ error: "Invalid scene index" });
+      return;
+    }
+    if (!(await projectExists(projectId, userId))) {
+      res.status(404).json({ error: "Project not found" });
       return;
     }
     if (!(await workExists(projectId, workId))) {
@@ -232,14 +256,19 @@ router.post("/:workId/media/scene/:index/video", upload.single("file"), async (r
   }
 });
 
-router.get("/:workId/media/scene/:index/image", async (req, res, next) => {
+router.get("/:workId/media/scene/:index/image", requireScope("works:read"), async (req, res, next) => {
   try {
+    const userId = req.user!.id;
     const projectId = getProjectId(req);
     const workId = getWorkId(req);
     const index = String(req.params.index ?? "0");
     const i = parseInt(index, 10);
     if (Number.isNaN(i) || i < 0) {
       res.status(400).json({ error: "Invalid scene index" });
+      return;
+    }
+    if (!(await projectExists(projectId, userId))) {
+      res.status(404).json({ error: "Project not found" });
       return;
     }
     const filePath = await resolveSceneImagePath(projectId, workId, i);
@@ -257,14 +286,19 @@ router.get("/:workId/media/scene/:index/image", async (req, res, next) => {
   }
 });
 
-router.get("/:workId/media/scene/:index/video", async (req, res, next) => {
+router.get("/:workId/media/scene/:index/video", requireScope("works:read"), async (req, res, next) => {
   try {
+    const userId = req.user!.id;
     const projectId = getProjectId(req);
     const workId = getWorkId(req);
     const index = String(req.params.index ?? "0");
     const i = parseInt(index, 10);
     if (Number.isNaN(i) || i < 0) {
       res.status(400).json({ error: "Invalid scene index" });
+      return;
+    }
+    if (!(await projectExists(projectId, userId))) {
+      res.status(404).json({ error: "Project not found" });
       return;
     }
     const filePath = await resolveSceneVideoPath(projectId, workId, i);

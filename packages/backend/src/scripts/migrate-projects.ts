@@ -67,6 +67,7 @@ async function migrateProject(projectId: string): Promise<boolean> {
 
   const project: Project = {
     id: data.id,
+    userId: "",
     name: data.name,
     createdAt: data.createdAt,
     updatedAt: data.updatedAt,

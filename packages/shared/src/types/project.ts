@@ -50,6 +50,7 @@ Return ONLY the JSON, no extra text.`;
 /** Proje: üst seviye; tüm agent sistem promptları ve knowledge burada. */
 export interface Project {
   id: string;
+  userId: string;
   name: string;
   createdAt: number;
   updatedAt: number;
@@ -68,6 +69,7 @@ export interface Project {
 /** Proje listesi için meta. */
 export interface ProjectMeta {
   id: string;
+  userId: string;
   name: string;
   updatedAt: number;
 }

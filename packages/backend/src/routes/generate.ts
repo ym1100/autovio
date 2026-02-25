@@ -1,8 +1,11 @@
 import { Router } from "express";
 import { z } from "zod";
 import { getImageProvider, getVideoProvider } from "../providers/registry.js";
+import { authenticate, requireScope } from "../middleware/auth.js";
 
 const router = Router();
+
+router.use(authenticate);
 
 const ImageRequestSchema = z.object({
   prompt: z.string(),
@@ -32,7 +35,7 @@ function resolveModelId(
   return modelId;
 }
 
-router.post("/image", async (req, res, next) => {
+router.post("/image", requireScope("ai:generate"), async (req, res, next) => {
   try {
     const providerId = req.headers["x-image-provider"] as string || "dalle";
     const rawModelId = req.headers["x-model-id"] as string | undefined;
@@ -59,7 +62,7 @@ router.post("/image", async (req, res, next) => {
   }
 });
 
-router.post("/video", async (req, res, next) => {
+router.post("/video", requireScope("ai:generate"), async (req, res, next) => {
   try {
     const providerId = req.headers["x-video-provider"] as string || "runway";
     const rawModelId = req.headers["x-model-id"] as string | undefined;

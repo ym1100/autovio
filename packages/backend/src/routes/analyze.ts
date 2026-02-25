@@ -2,10 +2,13 @@ import { Router } from "express";
 import fs from "fs";
 import { upload } from "../middleware/upload.js";
 import { getVisionProvider } from "../providers/registry.js";
+import { authenticate, requireScope } from "../middleware/auth.js";
 
 const router = Router();
 
-router.post("/", upload.single("video"), async (req, res, next) => {
+router.use(authenticate);
+
+router.post("/", requireScope("ai:analyze"), upload.single("video"), async (req, res, next) => {
   try {
     const file = req.file;
     if (!file) {

@@ -8,13 +8,17 @@ import {
   deleteProject,
   projectExists,
 } from "../storage/projects.js";
+import { authenticate, requireScope } from "../middleware/auth.js";
 
 const router = Router();
 
+router.use(authenticate);
+
 // List projects
-router.get("/", async (_req, res, next) => {
+router.get("/", requireScope("projects:read"), async (req, res, next) => {
   try {
-    const projects = await listProjects();
+    const userId = req.user!.id;
+    const projects = await listProjects(userId);
     res.json(projects);
   } catch (e) {
     next(e);
@@ -22,10 +26,11 @@ router.get("/", async (_req, res, next) => {
 });
 
 // Get project (meta + systemPrompt + knowledge)
-router.get("/:id", async (req, res, next) => {
+router.get("/:id", requireScope("projects:read"), async (req, res, next) => {
   try {
+    const userId = req.user!.id;
     const id = String(req.params.id ?? "");
-    const project = await getProject(id);
+    const project = await getProject(id, userId);
     if (!project) {
       res.status(404).json({ error: "Project not found" });
       return;
@@ -37,10 +42,11 @@ router.get("/:id", async (req, res, next) => {
 });
 
 // Create project
-router.post("/", async (req, res, next) => {
+router.post("/", requireScope("projects:write"), async (req, res, next) => {
   try {
+    const userId = req.user!.id;
     const name = (req.body?.name as string) || "Yeni Proje";
-    const project = await createProject(name);
+    const project = await createProject(name, userId);
     res.status(201).json(project);
   } catch (e) {
     next(e);
@@ -48,19 +54,21 @@ router.post("/", async (req, res, next) => {
 });
 
 // Update project (name, systemPrompt, knowledge)
-router.put("/:id", async (req, res, next) => {
+router.put("/:id", requireScope("projects:write"), async (req, res, next) => {
   try {
+    const userId = req.user!.id;
     const id = String(req.params.id ?? "");
     const project = req.body as Project;
     if (project.id !== id) {
       res.status(400).json({ error: "ID mismatch" });
       return;
     }
-    if (!(await projectExists(id))) {
+    if (!(await projectExists(id, userId))) {
       res.status(404).json({ error: "Project not found" });
       return;
     }
-    await saveProject(project);
+    project.userId = userId;
+    await saveProject(project, userId);
     res.json(project);
   } catch (e) {
     next(e);
@@ -68,14 +76,15 @@ router.put("/:id", async (req, res, next) => {
 });
 
 // Delete project
-router.delete("/:id", async (req, res, next) => {
+router.delete("/:id", requireScope("projects:write"), async (req, res, next) => {
   try {
+    const userId = req.user!.id;
     const id = String(req.params.id ?? "");
-    if (!(await projectExists(id))) {
+    const deleted = await deleteProject(id, userId);
+    if (!deleted) {
       res.status(404).json({ error: "Project not found" });
       return;
     }
-    await deleteProject(id);
     res.status(204).send();
   } catch (e) {
     next(e);

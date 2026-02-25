@@ -1,4 +1,5 @@
 import type { AnalysisResult, ScenarioScene, ProviderInfo, ProviderConfig } from "@viragen/shared";
+import { getAuthToken } from "../store/useAuthStore";
 
 const DEFAULT_CONFIG: ProviderConfig = {
   vision: { providerId: "gemini", modelId: "gemini-2.0-flash" },
@@ -25,12 +26,18 @@ export function getProviderConfig(): ProviderConfig {
   }
 }
 
+function getAuthHeader(): Record<string, string> {
+  const token = getAuthToken();
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
 function getHeaders(category: keyof ProviderConfig): Record<string, string> {
   const config = getProviderConfig();
   const keys = getApiKeys();
   const selection = config[category];
 
   return {
+    ...getAuthHeader(),
     [`x-${category}-provider`]: selection.providerId,
     "x-model-id": selection.modelId,
     "x-api-key": keys[selection.providerId] || "",
@@ -54,6 +61,7 @@ export async function analyzeVideo(
   const res = await fetch("/api/analyze", {
     method: "POST",
     headers: {
+      ...getAuthHeader(),
       "x-vision-provider": headers["x-vision-provider"],
       "x-model-id": headers["x-model-id"],
       "x-api-key": headers["x-api-key"],
@@ -79,6 +87,7 @@ export async function buildScenario(
   const res = await fetch("/api/scenario", {
     method: "POST",
     headers: {
+      ...getAuthHeader(),
       "Content-Type": "application/json",
       "x-llm-provider": headers["x-llm-provider"],
       "x-model-id": headers["x-model-id"],
@@ -121,6 +130,7 @@ export async function generateImage(
   const res = await fetch("/api/generate/image", {
     method: "POST",
     headers: {
+      ...getAuthHeader(),
       "Content-Type": "application/json",
       "x-image-provider": headers["x-image-provider"],
       "x-model-id": headers["x-model-id"],
@@ -154,6 +164,7 @@ export async function generateVideo(
   const res = await fetch("/api/generate/video", {
     method: "POST",
     headers: {
+      ...getAuthHeader(),
       "Content-Type": "application/json",
       "x-video-provider": headers["x-video-provider"],
       "x-model-id": headers["x-model-id"],
@@ -178,6 +189,8 @@ export async function generateVideo(
 }
 
 export async function fetchProviders(): Promise<ProviderInfo[]> {
-  const res = await fetch("/api/providers");
+  const res = await fetch("/api/providers", {
+    headers: getAuthHeader(),
+  });
   return res.json();
 }

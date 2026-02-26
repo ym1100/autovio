@@ -190,9 +190,11 @@ export default function ScenarioStep() {
             const current = useStore.getState().generatedScenes;
             const next = scenes.map((s, i) => {
               const existing = current[i];
-              if (existing?.status === "done" && existing.sceneIndex === s.scene_index) {
-                return existing;
-              }
+              const preserve =
+                existing?.sceneIndex === s.scene_index &&
+                existing?.status !== "pending" &&
+                existing?.status !== "error";
+              if (preserve) return existing;
               return { sceneIndex: s.scene_index, status: "pending" as const };
             });
             useStore.getState().setGeneratedScenes(next);

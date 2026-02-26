@@ -334,30 +334,30 @@ ViraGen implements a 5-step video generation workflow. Each step builds upon the
 
 ### Step 3: GenerateStep (Asset Generation)
 
-**Purpose**: Generate images and videos for each scene
+**Purpose**: Generate images and videos for each scene with step-by-step approval
 
 **Process (per scene)**:
-1. Send image_prompt to image provider
-2. Receive generated image URL
-3. Send image + video_prompt to video provider
-4. Receive generated video URL
-5. Save media files to storage
+1. User triggers image generation → `pending` → `generating_image`
+2. Image completes → `image_ready`; image is shown, user can approve or edit prompt
+3. User approves → `generating_video`; video is generated from approved image
+4. Video completes → `done`. User can regenerate video or go back to image stage
+- Inline editing: side panels (ImageEditPanel, VideoEditPanel) allow editing prompts without leaving the step. "Generate All Images" runs image generation for all pending scenes sequentially; video is generated only after per-scene approval.
 
 **Data Flow**:
-- Frontend: `GenerateStep.tsx` component
-- API: `POST /api/generate/image`, `POST /api/generate/video`
-- Image Provider: DALL-E/Gemini
-- Video Provider: Runway/Gemini
+- Frontend: `GenerateStep.tsx`, `SidePanel.tsx`, `ImageEditPanel.tsx`, `VideoEditPanel.tsx`, `AuthenticatedMedia.tsx`
+- API: `POST /api/generate/image`, `POST /api/generate/video` (unchanged)
+- Image Provider: DALL-E/Gemini; Video Provider: Runway/Gemini
 - Storage: `POST /api/projects/:id/works/:id/media/scene/:index/image|video`
+- Media URLs that point to own API (`/api/.../media/...`) are fetched with auth and shown via blob URLs (hook `useAuthenticatedMediaUrl`) so previews do not trigger 401.
 
 **Status Tracking**:
-Each scene has a status: `pending` → `generating_image` → `generating_video` → `done` (or `error`)
+`pending` → `generating_image` → `image_ready` → `generating_video` → `done` (or `error`). New state `image_ready` means image is ready and awaiting user approval before video generation.
 
 **Output**: GeneratedSceneSnapshot array with:
 - sceneIndex: Scene number
-- imageUrl: URL to generated/stored image
-- videoUrl: URL to generated/stored video
-- status: Current generation status
+- imageUrl: URL to generated/stored image (or blob URL for display)
+- videoUrl: URL to generated/stored video (or blob/data URL for display)
+- status: One of pending, generating_image, image_ready, generating_video, done, error
 - error: Error message if failed
 
 ---
@@ -377,6 +377,10 @@ Each scene has a status: `pending` → `generating_image` → `generating_video`
 - Frontend: `EditorStep.tsx` component, timeline editor components
 - API: `POST /api/export`
 - Backend: EZFFMPEG processes clips into final video
+
+**Editor-specific behavior**:
+- **Auth-resolved media**: Clip image/video URLs that point to own API (`/api/.../media/...`) are resolved in EditorStep (fetch with JWT, create blob URLs) so preview and timeline thumbnails work without 401. Resolved URLs are passed as `displayClipMeta` to VideoPreview, PropertiesPanel, EditorTimeline, ExportDialog.
+- **State sync**: When `generatedScenes` or `scenes` change (e.g. user returns from Generate with new completed scenes), editor timeline and clip meta are updated from store so the timeline reflects the latest done scenes.
 
 **Export Request**:
 - projectId, workId: Identifiers
@@ -541,6 +545,7 @@ All endpoints are prefixed with `/api`. Authentication uses JWT Bearer tokens un
 - Headers: `x-video-provider`, `x-model-id`, `x-api-key`
 - Request: `{ image_url, prompt, duration?, video_instruction? }`
 - Response: `{ videoUrl: string }`
+- **Internal image URLs**: If `image_url` is an own media path (`/api/projects/.../works/.../media/scene/:index/image`), the backend fetches the image with the request’s auth, converts it to a data URL, and passes that to the video provider so the provider does not receive 401 when loading the image.
 
 ---
 
@@ -699,7 +704,7 @@ This is the most complex model, containing nested subdocuments for analysis and 
 | status | String | Generation status |
 | error | String | Error message |
 
-**Status Values**: `pending`, `generating_image`, `generating_video`, `done`, `error`
+**Status Values**: `pending`, `generating_image`, `image_ready`, `generating_video`, `done`, `error`. The value `image_ready` indicates the image is ready and awaiting user approval before video generation.
 
 **Indexes**: `{ projectId: 1 }`, `{ projectId: 1, updatedAt: -1 }`
 
@@ -883,7 +888,16 @@ Main application state containing:
 - Pipeline state: currentStep, mode, productName, productDescription, etc.
 - analysis: AnalysisResult from video analysis
 - scenes: ScenarioScene array
-- generatedScenes: Generation status for each scene
+- generatedScenes: Generation status for each scene (status includes `image_ready` for step-by-step approval)
+
+**Generation actions (step-by-step flow)**:
+- `generateSceneImage(sceneIndex)`: Generate image only; set status to `image_ready`
+- `approveImageAndGenerateVideo(sceneIndex)`: From `image_ready`, generate video and set `done`
+- `updateAndRegenerateImage(sceneIndex, imagePrompt, negativePrompt)`: Update prompts and regenerate image
+- `updateAndRegenerateVideo(sceneIndex, videoPrompt, duration)`: Update prompts and regenerate video
+- `backToImageStage(sceneIndex)`: From `done` back to `image_ready`, discard video
+- `generateAllImages()`: Run image generation for all pending scenes sequentially
+- `updateScenePrompts(sceneIndex, updates)`: Update scene prompts (image_prompt, negative_prompt, video_prompt, duration_seconds) and persist
 
 **useAuthStore** (`store/useAuthStore.ts`)
 Authentication state:
@@ -939,6 +953,10 @@ These are read by `api/client.ts` and sent as headers with each AI-related reque
 | Auth store | packages/frontend/src/store/useAuthStore.ts |
 | API client | packages/frontend/src/api/client.ts |
 | Pipeline steps | packages/frontend/src/components/steps/*.tsx |
+| Side panel (Generate) | packages/frontend/src/components/ui/SidePanel.tsx |
+| Image/Video edit panels | packages/frontend/src/components/steps/ImageEditPanel.tsx, VideoEditPanel.tsx |
+| Auth-resolved media (img/video) | packages/frontend/src/components/ui/AuthenticatedMedia.tsx |
+| Auth media URL hook | packages/frontend/src/hooks/useAuthenticatedMediaUrl.ts |
 
 ---
 

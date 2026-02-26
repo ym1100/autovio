@@ -1,10 +1,13 @@
 import { useState, useMemo, useCallback, useRef, useEffect } from "react";
 import { ArrowLeft, Type, Music, Download } from "lucide-react";
 import { useStore, type GeneratedScene } from "../../store/useStore";
+import { getAuthToken } from "../../store/useAuthStore";
+import { isApiMediaPath } from "../../hooks/useAuthenticatedMediaUrl";
 import type {
   TimelineRow,
   TimelineAction,
   ClipMetaMap,
+  ClipMeta,
   TextOverlayMap,
   TextOverlay,
   AudioMeta,
@@ -17,6 +20,23 @@ import VideoPreview, { createVideoEffect } from "../editor/VideoPreview";
 import PropertiesPanel from "../editor/PropertiesPanel";
 import EditorTimeline from "../editor/EditorTimeline";
 import ExportDialog from "../editor/ExportDialog";
+
+function resolveUrl(url: string | undefined, map: Record<string, string>): string | undefined {
+  if (!url) return undefined;
+  return map[url] ?? url;
+}
+
+function buildDisplayClipMeta(clipMeta: ClipMetaMap, resolvedUrlMap: Record<string, string>): ClipMetaMap {
+  const out: ClipMetaMap = {};
+  for (const [id, meta] of Object.entries(clipMeta)) {
+    out[id] = {
+      ...meta,
+      imageUrl: resolveUrl(meta.imageUrl, resolvedUrlMap),
+      videoUrl: resolveUrl(meta.videoUrl, resolvedUrlMap),
+    };
+  }
+  return out;
+}
 
 let textIdCounter = 0;
 
@@ -73,7 +93,8 @@ export default function EditorStep() {
   );
 
   const [editorData, setEditorData] = useState<TimelineRow[]>(initial.editorData);
-  const [clipMeta] = useState<ClipMetaMap>(initial.clipMeta);
+  const [clipMeta, setClipMeta] = useState<ClipMetaMap>(initial.clipMeta);
+  const [resolvedUrlMap, setResolvedUrlMap] = useState<Record<string, string>>({});
   const [textOverlays, setTextOverlays] = useState<TextOverlayMap>({});
   const [audioFile, setAudioFile] = useState<File | null>(null);
   const [audioMeta, setAudioMeta] = useState<AudioMeta>({ volume: 1 });
@@ -93,14 +114,74 @@ export default function EditorStep() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const audioInputRef = useRef<HTMLInputElement>(null);
 
-  const effects = useMemo<Record<string, TimelineEffect>>(
-    () => createVideoEffect(videoRef, clipMeta),
-    [clipMeta],
+  // Sync timeline and clipMeta when generatedScenes/scenes change (e.g. user returned from Generate with new done scenes)
+  useEffect(() => {
+    setEditorData(initial.editorData);
+    setClipMeta(initial.clipMeta);
+    setResolvedUrlMap((prev) => {
+      const next: Record<string, string> = {};
+      const urlsInInitial = new Set<string>();
+      for (const m of Object.values(initial.clipMeta)) {
+        if (m.imageUrl) urlsInInitial.add(m.imageUrl);
+        if (m.videoUrl) urlsInInitial.add(m.videoUrl);
+      }
+      for (const url of Object.keys(prev)) {
+        if (urlsInInitial.has(url)) next[url] = prev[url];
+        else if (prev[url].startsWith("blob:")) URL.revokeObjectURL(prev[url]);
+      }
+      return next;
+    });
+    const firstAction = initial.editorData.find((r) => r.id === "video-track")?.actions[0];
+    setSelectedItem(firstAction ? { type: "clip", actionId: firstAction.id } : null);
+  }, [generatedScenes, scenes]);
+
+  // Resolve API media URLs (auth) so preview/timeline can display without 401
+  useEffect(() => {
+    const urlsToResolve = new Set<string>();
+    for (const meta of Object.values(clipMeta)) {
+      if (meta.imageUrl && isApiMediaPath(meta.imageUrl)) urlsToResolve.add(meta.imageUrl);
+      if (meta.videoUrl && isApiMediaPath(meta.videoUrl)) urlsToResolve.add(meta.videoUrl);
+    }
+    if (urlsToResolve.size === 0) return;
+
+    const token = getAuthToken();
+    const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
+    let revoked = false;
+    const created: string[] = [];
+
+    urlsToResolve.forEach((url) => {
+      fetch(url, { headers })
+        .then((res) => {
+          if (!res.ok || revoked) return null;
+          return res.blob();
+        })
+        .then((blob) => {
+          if (!blob || revoked) return;
+          const blobUrl = URL.createObjectURL(blob);
+          created.push(blobUrl);
+          setResolvedUrlMap((prev) => ({ ...prev, [url]: blobUrl }));
+        })
+        .catch(() => {});
+    });
+
+    return () => {
+      revoked = true;
+      created.forEach((u) => URL.revokeObjectURL(u));
+    };
+  }, [clipMeta]);
+
+  const displayClipMeta = useMemo(
+    () => buildDisplayClipMeta(clipMeta, resolvedUrlMap),
+    [clipMeta, resolvedUrlMap],
   );
 
-  // Update video src when selected clip changes
+  const effects = useMemo<Record<string, TimelineEffect>>(
+    () => createVideoEffect(videoRef, displayClipMeta),
+    [displayClipMeta],
+  );
+
   const selectedClipMeta =
-    selectedItem?.type === "clip" ? clipMeta[selectedItem.actionId] : undefined;
+    selectedItem?.type === "clip" ? displayClipMeta[selectedItem.actionId] : undefined;
 
   useEffect(() => {
     const video = videoRef.current;
@@ -299,7 +380,7 @@ export default function EditorStep() {
         <div className="lg:col-span-3">
           <VideoPreview
             ref={videoRef}
-            clipMeta={clipMeta}
+            clipMeta={displayClipMeta}
             selectedItem={selectedItem}
             textOverlays={textOverlays}
             editorData={editorData}
@@ -311,7 +392,7 @@ export default function EditorStep() {
         <div className="lg:col-span-1">
           <PropertiesPanel
             selectedItem={selectedItem}
-            clipMeta={clipMeta}
+            clipMeta={displayClipMeta}
             textOverlays={textOverlays}
             audioFile={audioFile}
             audioMeta={audioMeta}
@@ -328,7 +409,7 @@ export default function EditorStep() {
       <EditorTimeline
         editorData={editorData}
         effects={effects}
-        clipMeta={clipMeta}
+        clipMeta={displayClipMeta}
         textOverlays={textOverlays}
         audioFile={audioFile}
         onChange={handleEditorChange}
@@ -341,7 +422,7 @@ export default function EditorStep() {
       {showExportDialog && (
         <ExportDialog
           editorData={editorData}
-          clipMeta={clipMeta}
+          clipMeta={displayClipMeta}
           textOverlays={textOverlays}
           audioFile={audioFile}
           audioMeta={audioMeta}

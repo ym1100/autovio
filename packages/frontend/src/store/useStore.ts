@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import type { AnalysisResult, ScenarioScene, ProviderConfig } from "@viragen/shared";
-import { getProviderConfig } from "../api/client";
+import { getProviderConfig, generateImage as apiGenerateImage, generateVideo as apiGenerateVideo } from "../api/client";
 import type { WorkSnapshot } from "@viragen/shared";
 import * as projectStorage from "../storage/projectStorage";
 
@@ -10,7 +10,9 @@ export interface GeneratedScene {
   sceneIndex: number;
   imageUrl?: string;
   videoUrl?: string;
-  status: "pending" | "generating_image" | "generating_video" | "done" | "error";
+  /** Remote image URL for video generation (not persisted; used when approving image) */
+  remoteImageUrl?: string;
+  status: "pending" | "generating_image" | "image_ready" | "generating_video" | "done" | "error";
   error?: string;
 }
 
@@ -88,6 +90,29 @@ interface AppState {
   generatedScenes: GeneratedScene[];
   setGeneratedScenes: (scenes: GeneratedScene[]) => void;
   updateGeneratedScene: (index: number, update: Partial<GeneratedScene>) => void;
+  generateSceneImage: (sceneIndex: number) => Promise<void>;
+  approveImageAndGenerateVideo: (sceneIndex: number) => Promise<void>;
+  updateAndRegenerateImage: (
+    sceneIndex: number,
+    imagePrompt: string,
+    negativePrompt: string,
+  ) => Promise<void>;
+  updateAndRegenerateVideo: (
+    sceneIndex: number,
+    videoPrompt: string,
+    duration: number,
+  ) => Promise<void>;
+  backToImageStage: (sceneIndex: number) => void;
+  generateAllImages: () => Promise<void>;
+  updateScenePrompts: (
+    sceneIndex: number,
+    updates: {
+      image_prompt?: string;
+      negative_prompt?: string;
+      video_prompt?: string;
+      duration_seconds?: number;
+    },
+  ) => void;
 
   // Settings
   showSettings: boolean;
@@ -270,21 +295,34 @@ export const useStore = create<AppState>((set, get) => ({
       scenarioError: null,
     });
     try {
-      const refBlob = await projectStorage.loadReferenceVideoBlob(projectId, workId);
-      if (refBlob) {
-        const file = new File([refBlob], "reference.mp4", { type: refBlob.type });
-        set({ videoFile: file });
+      if (work.hasReferenceVideo) {
+        const refBlob = await projectStorage.loadReferenceVideoBlob(projectId, workId);
+        if (refBlob) {
+          const file = new File([refBlob], "reference.mp4", { type: refBlob.type });
+          set({ videoFile: file });
+        }
       }
       const state = get();
       for (let i = 0; i < state.generatedScenes.length; i++) {
         const gs = state.generatedScenes[i];
-        if (gs.status !== "done") continue;
-        const imgUrl = await projectStorage.loadImageUrl(projectId, workId, i);
-        const vidUrl = await projectStorage.loadVideoUrl(projectId, workId, i);
+        const needImage =
+          gs.status === "image_ready" || gs.status === "generating_video" || gs.status === "done";
+        const needVideo = gs.status === "done";
+        if (!needImage && !needVideo) continue;
+        const imgUrl =
+          needImage ? await projectStorage.loadImageUrl(projectId, workId, i) : null;
+        const vidUrl =
+          needVideo ? await projectStorage.loadVideoUrl(projectId, workId, i) : null;
         if (imgUrl || vidUrl) {
           set((s) => ({
             generatedScenes: s.generatedScenes.map((sc, j) =>
-              j === i ? { ...sc, imageUrl: imgUrl ?? sc.imageUrl, videoUrl: vidUrl ?? sc.videoUrl } : sc
+              j === i
+                ? {
+                    ...sc,
+                    ...(imgUrl != null && { imageUrl: imgUrl }),
+                    ...(vidUrl != null && { videoUrl: vidUrl }),
+                  }
+                : sc
             ),
           }));
         }
@@ -416,6 +454,191 @@ export const useStore = create<AppState>((set, get) => ({
       setTimeout(() => get().persistCurrentWork(), 0);
       return next;
     }),
+
+  updateScenePrompts: (sceneIndex, updates) => {
+    get().updateScene(sceneIndex, updates);
+  },
+
+  generateSceneImage: async (sceneIndex) => {
+    const state = get();
+    const scene = state.scenes[sceneIndex];
+    if (!scene) return;
+    const { currentProjectId, currentWorkId, workImageSystemPrompt, projectImageSystemPrompt } =
+      state;
+    try {
+      state.updateGeneratedScene(sceneIndex, {
+        status: "generating_image",
+        error: undefined,
+      });
+      const imageInstruction =
+        workImageSystemPrompt.trim() || projectImageSystemPrompt?.trim() || "";
+      const remoteImageUrl = await apiGenerateImage(
+        scene.image_prompt,
+        scene.negative_prompt ?? "",
+        imageInstruction ? { imageInstruction } : undefined,
+      );
+      const imageUrlForUi =
+        currentProjectId && currentWorkId
+          ? await projectStorage.persistImageUrlAndGetObjectUrl(
+              currentProjectId,
+              currentWorkId,
+              sceneIndex,
+              remoteImageUrl,
+            )
+          : remoteImageUrl;
+      state.updateGeneratedScene(sceneIndex, {
+        imageUrl: imageUrlForUi,
+        remoteImageUrl,
+        status: "image_ready",
+      });
+    } catch (err) {
+      state.updateGeneratedScene(sceneIndex, {
+        status: "error",
+        error: err instanceof Error ? err.message : "Unknown error",
+      });
+    }
+  },
+
+  approveImageAndGenerateVideo: async (sceneIndex) => {
+    const state = get();
+    const scene = state.scenes[sceneIndex];
+    const gs = state.generatedScenes[sceneIndex];
+    if (!scene || !gs || gs.status !== "image_ready") return;
+    const { currentProjectId, currentWorkId, workVideoSystemPrompt, projectVideoSystemPrompt } =
+      state;
+    const imageUrlForVideo =
+      gs.remoteImageUrl ??
+      (gs.imageUrl?.startsWith("http")
+        ? gs.imageUrl
+        : typeof window !== "undefined" && gs.imageUrl
+          ? `${window.location.origin}${gs.imageUrl.startsWith("/") ? "" : "/"}${gs.imageUrl}`
+          : "");
+    if (!imageUrlForVideo) {
+      state.updateGeneratedScene(sceneIndex, {
+        status: "error",
+        error: "Image URL missing; regenerate image to generate video.",
+      });
+      return;
+    }
+    try {
+      state.updateGeneratedScene(sceneIndex, { status: "generating_video" });
+      const videoInstruction =
+        workVideoSystemPrompt.trim() || projectVideoSystemPrompt?.trim() || "";
+      const remoteVideoUrl = await apiGenerateVideo(
+        imageUrlForVideo,
+        scene.video_prompt,
+        scene.duration_seconds ?? 5,
+        videoInstruction ? { videoInstruction } : undefined,
+      );
+      let videoUrlForUi = remoteVideoUrl;
+      if (currentProjectId && currentWorkId) {
+        try {
+          videoUrlForUi = await projectStorage.persistVideoUrlAndGetObjectUrl(
+            currentProjectId,
+            currentWorkId,
+            sceneIndex,
+            remoteVideoUrl,
+          );
+        } catch {
+          // Persist failed (e.g. large payload); still show video via data URL or external URL
+        }
+      }
+      state.updateGeneratedScene(sceneIndex, {
+        videoUrl: videoUrlForUi,
+        status: "done",
+      });
+    } catch (err) {
+      state.updateGeneratedScene(sceneIndex, {
+        status: "image_ready",
+        error: err instanceof Error ? err.message : "Unknown error",
+      });
+    }
+  },
+
+  updateAndRegenerateImage: async (sceneIndex, imagePrompt, negativePrompt) => {
+    get().updateScenePrompts(sceneIndex, {
+      image_prompt: imagePrompt,
+      negative_prompt: negativePrompt,
+    });
+    await get().generateSceneImage(sceneIndex);
+  },
+
+  updateAndRegenerateVideo: async (sceneIndex, videoPrompt, duration) => {
+    get().updateScenePrompts(sceneIndex, {
+      video_prompt: videoPrompt,
+      duration_seconds: duration,
+    });
+    const state = get();
+    const scene = state.scenes[sceneIndex];
+    const gs = state.generatedScenes[sceneIndex];
+    if (!scene || !gs) return;
+    const { currentProjectId, currentWorkId, workVideoSystemPrompt, projectVideoSystemPrompt } =
+      state;
+    const imageUrlForVideo =
+      gs.remoteImageUrl ??
+      (gs.imageUrl?.startsWith("http")
+        ? gs.imageUrl
+        : typeof window !== "undefined" && gs.imageUrl
+          ? `${window.location.origin}${gs.imageUrl.startsWith("/") ? "" : "/"}${gs.imageUrl}`
+          : "");
+    if (!imageUrlForVideo) {
+      state.updateGeneratedScene(sceneIndex, {
+        status: "error",
+        error: "Image URL missing; regenerate image to generate video.",
+      });
+      return;
+    }
+    try {
+      state.updateGeneratedScene(sceneIndex, { status: "generating_video" });
+      const videoInstruction =
+        workVideoSystemPrompt.trim() || projectVideoSystemPrompt?.trim() || "";
+      const remoteVideoUrl = await apiGenerateVideo(
+        imageUrlForVideo,
+        videoPrompt,
+        duration,
+        videoInstruction ? { videoInstruction } : undefined,
+      );
+      let videoUrlForUi = remoteVideoUrl;
+      if (currentProjectId && currentWorkId) {
+        try {
+          videoUrlForUi = await projectStorage.persistVideoUrlAndGetObjectUrl(
+            currentProjectId,
+            currentWorkId,
+            sceneIndex,
+            remoteVideoUrl,
+          );
+        } catch {
+          // Persist failed; still show video via data URL or external URL
+        }
+      }
+      state.updateGeneratedScene(sceneIndex, {
+        videoUrl: videoUrlForUi,
+        status: "done",
+      });
+    } catch (err) {
+      state.updateGeneratedScene(sceneIndex, {
+        status: "error",
+        error: err instanceof Error ? err.message : "Unknown error",
+      });
+    }
+  },
+
+  backToImageStage: (sceneIndex) => {
+    get().updateGeneratedScene(sceneIndex, {
+      status: "image_ready",
+      videoUrl: undefined,
+    });
+  },
+
+  generateAllImages: async () => {
+    const state = get();
+    for (let i = 0; i < state.scenes.length; i++) {
+      const gs = state.generatedScenes[i];
+      if (gs?.status === "pending") {
+        await get().generateSceneImage(i);
+      }
+    }
+  },
 
   setShowSettings: (showSettings) => set({ showSettings }),
   setProviderConfig: (providerConfig) => {

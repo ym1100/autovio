@@ -7,7 +7,7 @@ export interface GeneratedSceneSnapshot {
   sceneIndex: number;
   imageUrl?: string;
   videoUrl?: string;
-  status: "pending" | "generating_image" | "generating_video" | "done" | "error";
+  status: "pending" | "generating_image" | "image_ready" | "generating_video" | "done" | "error";
   error?: string;
 }
 

@@ -7,6 +7,39 @@ const router = Router();
 
 router.use(authenticate);
 
+/** Check if image_url is our own auth-protected media URL (would 401 when provider fetches it). */
+function isInternalMediaUrl(url: string): boolean {
+  try {
+    const path = new URL(url, "http://x").pathname;
+    return /^\/api\/projects\/[^/]+\/works\/[^/]+\/media\/scene\/\d+\/image$/.test(path);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * If image_url points to our media, fetch it with the request's auth and return a data URL
+ * so the video provider can use it without hitting 401.
+ */
+async function resolveImageUrlForVideo(
+  imageUrl: string,
+  authHeader: string | undefined,
+): Promise<string> {
+  if (!isInternalMediaUrl(imageUrl)) return imageUrl;
+  const path = new URL(imageUrl, "http://x").pathname;
+  const backendBase =
+    process.env.BACKEND_URL || `http://127.0.0.1:${process.env.PORT || 3001}`;
+  const resolved = `${backendBase}${path}`;
+  const headers: Record<string, string> = {};
+  if (authHeader) headers.Authorization = authHeader;
+  const res = await fetch(resolved, { headers });
+  if (!res.ok) throw new Error(`Failed to fetch image: ${res.status}`);
+  const buffer = await res.arrayBuffer();
+  const base64 = Buffer.from(buffer).toString("base64");
+  const mime = res.headers.get("content-type") || "image/png";
+  return `data:${mime};base64,${base64}`;
+}
+
 const ImageRequestSchema = z.object({
   prompt: z.string(),
   negative_prompt: z.string().default(""),
@@ -78,9 +111,12 @@ router.post("/video", requireScope("ai:generate"), async (req, res, next) => {
     const modelId = resolveModelId(rawModelId, provider.models);
     const fullPrompt = video_instruction?.trim() ? `${video_instruction.trim()}\n\n${prompt}` : prompt;
 
+    const authHeader = req.headers.authorization as string | undefined;
+    const resolvedImageUrl = await resolveImageUrlForVideo(image_url, authHeader);
+
     console.log(`[generate/video] provider=${providerId} model=${modelId} duration=${duration}s prompt="${fullPrompt.slice(0, 80)}..."`);
 
-    const videoUrl = await provider.convert(image_url, fullPrompt, duration, apiKey, modelId);
+    const videoUrl = await provider.convert(resolvedImageUrl, fullPrompt, duration, apiKey, modelId);
 
     console.log(`[generate/video] success, url length=${videoUrl.length}`);
     res.json({ videoUrl });

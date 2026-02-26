@@ -69,19 +69,41 @@ export class GeminiVideoProvider implements IVideoProvider {
       throw new Error(`Veo generation failed: ${err.message || JSON.stringify(err)}`);
     }
 
-    const generated = operation.response?.generatedVideos?.[0]?.video;
+    const op = operation as any;
+    const resp = op.response ?? op.result;
+    console.log("[veo] operation keys:", Object.keys(op));
+    console.log("[veo] response/result present:", !!resp, "keys:", resp ? Object.keys(resp) : "n/a");
+
+    const list =
+      resp?.generatedVideos ??
+      resp?.generated_videos ??
+      (Array.isArray(resp?.videos) ? resp.videos : undefined);
+    console.log("[veo] list from generatedVideos/generated_videos/videos:", Array.isArray(list) ? list.length : "not array", typeof list);
+
+    const first = Array.isArray(list) ? list[0] : undefined;
+    console.log("[veo] first element keys:", first && typeof first === "object" ? Object.keys(first) : first);
+
+    const generated = first?.video ?? (first && typeof first === "object" && ((first as any).uri ?? (first as any).videoBytes ?? (first as any).video_bytes) ? first : undefined);
     if (!generated) {
+      const safeResp = resp
+        ? JSON.stringify(resp, (_, v: unknown) => (typeof v === "string" && v.length > 200 ? "[truncated]" : v), 2).slice(0, 2000)
+        : "null";
+      console.error("[veo] Unexpected response shape. operation.response/result:", safeResp);
       throw new Error("Veo returned no video data");
     }
+    const gen = generated as any;
+    console.log("[veo] generated keys:", typeof generated === "object" && generated ? Object.keys(generated) : typeof generated);
 
-    // Prefer inline bytes; otherwise fetch from URI with API key
-    if (generated.videoBytes) {
-      const mime = generated.mimeType || "video/mp4";
-      return `data:${mime};base64,${generated.videoBytes}`;
+    // Prefer inline bytes; otherwise fetch from URI with API key (support camelCase and snake_case)
+    const videoBytes = gen.videoBytes ?? gen.video_bytes;
+    const uri = gen.uri;
+    if (videoBytes) {
+      const mime = gen.mimeType ?? gen.mime_type ?? "video/mp4";
+      return `data:${mime};base64,${videoBytes}`;
     }
 
-    if (generated.uri) {
-      const resp = await fetch(generated.uri, {
+    if (uri) {
+      const resp = await fetch(uri, {
         headers: { "x-goog-api-key": apiKey, Accept: "*/*" },
         redirect: "follow",
       });
@@ -93,6 +115,7 @@ export class GeminiVideoProvider implements IVideoProvider {
       return `data:video/mp4;base64,${b64}`;
     }
 
+    console.error("[veo] Video object keys:", generated && typeof generated === "object" ? Object.keys(generated) : "n/a");
     throw new Error("Veo returned video with no uri or videoBytes");
   }
 }

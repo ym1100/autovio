@@ -192,7 +192,12 @@ export async function persistImageUrlAndGetObjectUrl(
   const res = await fetch(imageUrl);
   if (!res.ok) throw new Error("Failed to fetch image");
   const blob = await res.blob();
-  return saveImageBlob(projectId, workId, sceneIndex, blob);
+  await saveImageBlob(projectId, workId, sceneIndex, blob);
+  const savedPath = getSceneImageUrl(projectId, workId, sceneIndex);
+  const authRes = await fetch(savedPath, { headers: getAuthHeader() });
+  if (!authRes.ok) throw new Error("Failed to load saved image");
+  const savedBlob = await authRes.blob();
+  return URL.createObjectURL(savedBlob);
 }
 
 export async function persistVideoUrlAndGetObjectUrl(
@@ -204,5 +209,10 @@ export async function persistVideoUrlAndGetObjectUrl(
   const res = await fetch(videoUrl);
   if (!res.ok) throw new Error("Failed to fetch video");
   const blob = await res.blob();
-  return saveVideoBlob(projectId, workId, sceneIndex, blob);
+  await saveVideoBlob(projectId, workId, sceneIndex, blob);
+  const savedPath = getSceneVideoUrl(projectId, workId, sceneIndex);
+  const authRes = await fetch(savedPath, { headers: getAuthHeader() });
+  if (!authRes.ok) throw new Error("Failed to load saved video");
+  const savedBlob = await authRes.blob();
+  return URL.createObjectURL(savedBlob);
 }

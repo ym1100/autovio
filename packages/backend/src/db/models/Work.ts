@@ -69,7 +69,7 @@ const GeneratedSceneSnapshotSchema = new Schema(
     videoUrl: { type: String },
     status: {
       type: String,
-      enum: ["pending", "generating_image", "generating_video", "done", "error"],
+      enum: ["pending", "generating_image", "image_ready", "generating_video", "done", "error"],
       required: true,
     },
     error: { type: String },

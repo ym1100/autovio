@@ -33,8 +33,10 @@ ViraGen is a full-stack AI-powered video generation platform. It enables users t
 - Generate scene-by-scene scenarios using LLM providers
 - Create images and videos for each scene using AI generation models
 - **Project-level structured style guide** (tone, color palette, tempo, camera style, brand voice) applied to scenario, image, and video generation for consistency across works
-- Edit and arrange clips in a timeline editor
-- Export final videos with text overlays and transitions
+- **Project assets**: Upload and manage project-level assets (images, video, audio, fonts) in Project settings; reuse across all works (e.g. logos, watermarks).
+- Edit and arrange clips in a timeline editor with **video transitions** (cut, fade, dissolve, wipe, slide) and per-clip transition duration.
+- **Image/logo overlays**: Add image assets from the project library to the timeline; position, size, opacity, and rotation in the editor; rendered in export.
+- Export final videos with text overlays, image overlays, transitions, and audio.
 
 ### Key Use Cases
 
@@ -124,7 +126,10 @@ The system integrates with multiple AI providers (Google Gemini, Anthropic Claud
 │   │   │   │       ├── Work.ts
 │   │   │   │       └── APIToken.ts
 │   │   │   ├── lib/                # Utility libraries
-│   │   │   │   └── EZFFMPEG.ts     # FFmpeg wrapper for video export
+│   │   │   │   └── ezffmpeg/       # FFmpeg wrapper for video export
+│   │   │   │       ├── index.ts    # EZFFMPEG class (video/audio/text/image clips, xfade, overlay)
+│   │   │   │       ├── types.ts    # ClipObj, VideoClipObj, ImageClipObj, etc.
+│   │   │   │       └── helpers.ts  # getTrimEnd, getBlackString, etc.
 │   │   │   ├── middleware/         # Express middleware
 │   │   │   │   ├── auth.ts         # JWT authentication
 │   │   │   │   ├── errorHandler.ts # Global error handling
@@ -147,6 +152,7 @@ The system integrates with multiple AI providers (Google Gemini, Anthropic Claud
 │   │   │   │   ├── auth.ts         # Authentication endpoints
 │   │   │   │   ├── tokens.ts       # API token management
 │   │   │   │   ├── projects.ts     # Project CRUD
+│   │   │   │   ├── assets.ts       # Project assets CRUD (upload, list, get, delete)
 │   │   │   │   ├── works.ts        # Work CRUD and media
 │   │   │   │   ├── analyze.ts      # Video analysis
 │   │   │   │   ├── scenario.ts     # Scenario generation
@@ -155,6 +161,10 @@ The system integrates with multiple AI providers (Google Gemini, Anthropic Claud
 │   │   │   │   ├── export.ts       # Final video export
 │   │   │   │   └── providers.ts    # Provider listing
 │   │   │   ├── storage/            # File storage logic
+│   │   │   │   ├── path.ts         # Path helpers (projectDir, workDir, assetsDir, assetFilePath)
+│   │   │   │   ├── projects.ts     # Project CRUD
+│   │   │   │   ├── works.ts        # Work and scene media
+│   │   │   │   └── assets.ts       # Project asset storage (list, get, upload, delete)
 │   │   │   └── index.ts            # Server entry point
 │   │   ├── data/                   # Binary file storage (videos, images)
 │   │   └── uploads/                # Temporary upload storage
@@ -165,7 +175,11 @@ The system integrates with multiple AI providers (Google Gemini, Anthropic Claud
 │   │   │   │   └── client.ts       # Axios-based API wrapper
 │   │   │   ├── components/         # React components
 │   │   │   │   ├── auth/           # Login, Register pages
-│   │   │   │   ├── editor/         # Video editor components
+│   │   │   │   ├── editor/         # Video editor (timeline, preview, properties, export, AssetPickerDialog)
+│   │   │   │   ├── project/        # Project-level UI
+│   │   │   │   │   ├── ProjectAssetsPanel.tsx   # Asset list, filter, upload, preview, delete
+│   │   │   │   │   ├── AssetUploadDialog.tsx    # Upload asset modal
+│   │   │   │   │   └── AssetPreviewModal.tsx   # Full-size asset preview
 │   │   │   │   ├── settings/       # Provider settings UI
 │   │   │   │   ├── steps/          # Pipeline step components
 │   │   │   │   │   ├── InitStep.tsx
@@ -191,9 +205,9 @@ The system integrates with multiple AI providers (Google Gemini, Anthropic Claud
 │           │   ├── analysis.ts     # AnalysisResult, SceneAnalysis
 │           │   ├── scenario.ts     # UserIntent, ScenarioScene
 │           │   ├── style-guide.ts  # StyleGuide, styleGuideFromAnalysis, isStyleGuideEmpty
-│           │   ├── project.ts      # Project, WorkSnapshot
+│           │   ├── project.ts      # Project, WorkSnapshot, ProjectAsset, ProjectAssetList, EditorStateSnapshot (imageTrack, imageOverlays), ImageOverlaySnapshot, TimelineActionSnapshot (transitionType, transitionDuration)
 │           │   ├── provider.ts     # ProviderConfig, ProviderInfo
-│           │   ├── video.ts        # VideoClip, ExportRequest
+│           │   ├── video.ts        # VideoClip, ExportRequest, ExportRequestImage
 │           │   ├── user.ts         # User, AuthResponse
 │           │   └── token.ts        # TokenScope, APITokenMeta
 │           └── index.ts            # Exports all types
@@ -378,36 +392,38 @@ ViraGen implements a 5-step video generation workflow. Each step builds upon the
 
 ### Step 4: EditorStep (Video Editing & Export)
 
-**Purpose**: Arrange clips on timeline, add overlays, export final video
+**Purpose**: Arrange clips on timeline, add overlays (text and image), set transitions, export final video
 
 **Capabilities**:
 - Drag and drop clips on timeline
 - Trim and adjust clip positions (per-clip trim start/end)
-- Add text overlays with timing and styling
-- Preview assembled video in export resolution
-- Export final MP4 with transitions and audio
+- **Video transitions**: Per-clip "transition to next" (cut, fade, dissolve, wipeleft, wiperight, slideup, slidedown) and duration; editable in Properties panel when a video clip is selected (except last clip).
+- Add **text overlays** with timing and styling
+- Add **image overlays** from project assets ("+ Image" → AssetPickerDialog); image track with position/size/opacity/rotation in Properties panel; preview and export render images from project asset URLs.
+- Preview assembled video in export resolution (video, text, and image overlays)
+- Export final MP4 with transitions, text overlays, image overlays, and audio
 
 **Data Flow**:
-- Frontend: `EditorStep.tsx` component, timeline editor components
-- API: `POST /api/export`
-- Backend: EZFFMPEG processes clips into final video
+- Frontend: `EditorStep.tsx`, `EditorTimeline.tsx`, `VideoPreview.tsx`, `PropertiesPanel.tsx`, `ExportDialog.tsx`, `AssetPickerDialog.tsx`
+- Project assets UI (outside editor): `WorksList` → Project settings accordion → **Project assets** section (`ProjectAssetsPanel`, `AssetUploadDialog`, `AssetPreviewModal`) for upload/list/preview/delete.
+- API: `GET/POST /api/projects/:projectId/assets`, `POST /api/export`
+- Backend: `storage/assets.ts` for asset CRUD; EZFFMPEG processes video clips, image overlays, text overlays, and transitions into final video.
 
 **Editor-specific behavior**:
-- **Auth-resolved media**: Clip image/video URLs that point to own API (`/api/.../media/...`) are resolved in EditorStep (fetch with JWT, create blob URLs) so preview and timeline thumbnails work without 401. Resolved URLs are passed as `displayClipMeta` to VideoPreview, PropertiesPanel, EditorTimeline, ExportDialog.
+- **Auth-resolved media**: Clip image/video URLs that point to own API (`/api/.../media/...`) are resolved in EditorStep (fetch with JWT, create blob URLs) so preview and timeline thumbnails work without 401. **Project asset images** (in AssetPickerDialog and ProjectAssetsPanel) are loaded via authenticated fetch and displayed as blob URLs so `<img>` previews work reliably. Resolved URLs are passed as `displayClipMeta` / `imageAssetUrls` to VideoPreview, PropertiesPanel, EditorTimeline, ExportDialog.
 - **State sync**: When `generatedScenes` or `scenes` change (e.g. user returns from Generate with new completed scenes), editor timeline and clip meta are updated from store so the timeline reflects the latest done scenes.
-- **Pixel-accurate preview**: `VideoPreview` renders into a fixed-size container that matches export resolution (`ExportSettings.width/height`) and scales with a CSS transform. Text overlays use pixel-based font size and center-relative coordinates so preview and FFmpeg output match visually.
-- **Editor state persistence**: Timeline rows, clip metadata (including trim values), text overlays, audio URL/volume and export settings are serialized into `EditorStateSnapshot` and stored on the `Work` document (`WorkSnapshot.editorState`). On load, EditorStep reconstructs the timeline from this snapshot so a page refresh does not lose edits.
-- **Manual save & dirty tracking**: Editor shows a `Save` button (and supports ⌘/Ctrl+S) that persists the current `editorState` via `useStore.saveEditorState()`. Any timeline/text/audio/export change marks the editor as dirty until saved.
+- **Pixel-accurate preview**: `VideoPreview` renders into a fixed-size container that matches export resolution (`ExportSettings.width/height`) and scales with a CSS transform. Text overlays use pixel-based font size and center-relative coordinates; image overlays use `imageOverlays` + `imageAssetUrls` (resolved blob URLs per assetId) with width, height, centerX, centerY, opacity, rotation so preview and FFmpeg output match visually.
+- **Editor state persistence**: Timeline rows (video, text, **image**, audio), clip metadata (trim + **transitionType**, **transitionDuration**), **imageOverlays** (assetId, size, position, opacity, rotation), text overlays, audio URL/volume and export settings are serialized into `EditorStateSnapshot` and stored on the `Work` document (`WorkSnapshot.editorState`). On load, EditorStep reconstructs the timeline from this snapshot so a page refresh does not lose edits.
+- **Manual save & dirty tracking**: Editor shows a `Save` button (and supports ⌘/Ctrl+S) that persists the current `editorState` via `useStore.saveEditorState()`. Any timeline/text/image/audio/export/transition change marks the editor as dirty until saved.
 - **Audio track from server**: When the user adds an audio file, the frontend uploads it to `/api/projects/:projectId/works/:workId/media/audio`. Only the persisted server URL is kept in `editorState`; the raw `File` object lives in memory for the current session.
 
 **Export Request**:
 - projectId, workId: Identifiers
 - clips: Array of clip configurations
-  - `sceneIndex`: Scenario scene index
-  - `position`, `end`: Timeline position in seconds
-  - `cutFrom`: Per-clip trim start (seconds)
-  - `transition`, `transitionDuration`: Optional scene transition metadata (e.g. `fade`, `dissolve`, `wipeleft`, `slideup`)
+  - `sceneIndex`, `position`, `end`, `cutFrom`
+  - `transition`, `transitionDuration`: From clip meta (timeline-editable; e.g. `fade`, `dissolve`, `wipeleft`, `slideup`)
 - texts: Array of text overlays (content, timing, styling, position)
+- **images**: Array of image overlay configs (`assetId`, `position`, `end`, `width`, `height`, `x`, `y`, `opacity?`, `rotation?`); backend resolves asset file path and passes to EZFFMPEG as image clips.
 - audio: Optional audio config `{ volume, audioUrl }` (audio file already persisted under the work’s media)
 - options: Output settings (width, height, fps)
 
@@ -424,7 +440,7 @@ All pipeline state is continuously saved to the Work document in MongoDB:
 - analysis: AnalysisResult from Step 1
 - scenes: ScenarioScene array from Step 2
 - generatedScenes: GeneratedSceneSnapshot array from Step 3
-- editorState: Optional `EditorStateSnapshot` from EditorStep (timeline, text overlays, audio, export settings)
+- editorState: Optional `EditorStateSnapshot` from EditorStep (timeline including video/text/image/audio tracks, clip metadata with transitionType/transitionDuration, textOverlays, imageOverlays, audio, export settings)
 
 This enables users to pause and resume work at any point.
 
@@ -444,9 +460,12 @@ The export pipeline is implemented by the `EZFFMPEG` wrapper in the backend. It 
   - Trims each video according to `cutFrom` and the clip’s end time
   - Scales to target resolution with `force_original_aspect_ratio=decrease` and pads to center
 - **Transitions**:
-  - Builds a chain of segments and applies FFmpeg `xfade` where `transition` is not `cut`
-  - Supported transitions (mapped from scenario `transition`): `fade`, `dissolve`, `wipeleft`, `wiperight`, `slideup`, `slidedown`
-  - For `cut`, segments are concatenated without cross-fade; for others, a configurable `transitionDuration` is applied
+  - Builds a chain of segments and applies FFmpeg `xfade` where `transition` is not `cut`; transition type and duration come from each clip's `transition` and `transitionDuration` (timeline/editor-set).
+  - Supported transitions: `fade`, `dissolve`, `wipeleft`, `wiperight`, `slideup`, `slidedown`
+  - For `cut` or zero duration, segments are concatenated without cross-fade; for others, a configurable `transitionDuration` is applied.
+- **Image overlays**:
+  - Each entry in the export `images` array is resolved to a project asset file path; added as an image input to FFmpeg.
+  - Filter chain: overlay filter with `enable='between(t,start,end)'`, optional opacity via `format=rgba,colorchannelmixer=aa=...`, positioned with `x`, `y` (top-left). Applied after video concat and before text drawtext.
 - **Audio mixing**:
   - If original clips contain audio, `getClipAudioString` mixes them
   - If a separate work-level audio file exists, it is added as an `audio` clip spanning the full timeline and mixed via `amix`
@@ -560,6 +579,25 @@ All endpoints are prefixed with `/api`. Authentication uses JWT Bearer tokens un
 
 ---
 
+### 6.5.1 Project Assets (`/api/projects/:projectId/assets`)
+
+Project-level asset storage (images, video, audio, fonts) for use across works (e.g. logos, watermarks). Stored under `data/projects/:projectId/assets/` with metadata in `assets.json`. Asset GET accepts optional `?token=` query for `<img>` src auth.
+
+| Method | Endpoint | Auth | Scope | Description |
+|--------|----------|------|-------|-------------|
+| GET | `/api/projects/:projectId/assets` | Yes | projects:read | List assets (optional `?type=image\|video\|audio\|font`) |
+| POST | `/api/projects/:projectId/assets` | Yes | projects:write | Upload asset (multipart: file, name?, tags?) |
+| GET | `/api/projects/:projectId/assets/:assetId` | Yes | projects:read | Get asset file (stream); also supports `?token=` for img src |
+| GET | `/api/projects/:projectId/assets/:assetId/meta` | Yes | projects:read | Get asset metadata only |
+| PUT | `/api/projects/:projectId/assets/:assetId` | Yes | projects:write | Update asset metadata (name, tags) |
+| DELETE | `/api/projects/:projectId/assets/:assetId` | Yes | projects:write | Delete asset |
+
+**ProjectAsset** (shared type): id, name, type (`image`|`video`|`audio`|`font`), filename, mimeType, size, width?, height?, duration?, createdAt, updatedAt, tags?, thumbnail?.
+
+**List response**: `{ assets: ProjectAsset[], totalSize: number, count: number }` (each asset may include `url` for the file endpoint).
+
+---
+
 ### 6.6 AI Endpoints
 
 **Video Analysis**
@@ -629,8 +667,10 @@ All endpoints are prefixed with `/api`. Authentication uses JWT Bearer tokens un
 **POST /api/export**
 - Request: ExportRequest object
   - projectId, workId: Identifiers
-  - clips: Array of `{ sceneIndex, position, end, cutFrom? }`
+  - clips: Array of `{ sceneIndex, position, end, cutFrom?, transition?, transitionDuration? }`
   - texts: Array of `{ text, position, end, fontSize?, fontColor?, x?, y?, centerX?, centerY? }`
+  - images: Array of `{ assetId, position, end, width, height, x, y, opacity?, rotation? }` (project asset IDs; backend resolves to file paths)
+  - audio: Optional `{ volume?, audioUrl? }`
   - options: `{ width?, height?, fps? }`
 - Response: Video file (video/mp4) as attachment
 
@@ -728,8 +768,22 @@ This is the most complex model, containing nested subdocuments for analysis and 
 | analysis | Object | No | AnalysisResult (nested) |
 | scenes | Array | No | ScenarioScene[] (nested) |
 | generatedScenes | Array | No | GeneratedSceneSnapshot[] (nested) |
+| editorState | Object | No | EditorStateSnapshot (nested; timeline, overlays, audio, export settings) |
 | createdAt | Number | Yes | Creation timestamp |
 | updatedAt | Number | Yes | Update timestamp |
+
+**Nested Schema: EditorStateSnapshot**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| editorData | Object | videoTrack, textTrack, imageTrack, audioTrack: arrays of TimelineActionSnapshot |
+| textOverlays | Map | id → TextOverlaySnapshot (text, fontSize, fontColor, centerX, centerY) |
+| imageOverlays | Map | id → ImageOverlaySnapshot (assetId, width, height, centerX, centerY, opacity, rotation, maintainAspectRatio) |
+| audioUrl | String | Optional work-level audio URL |
+| audioVolume | Number | Audio volume (default 1) |
+| exportSettings | Object | width, height, fps |
+
+**TimelineActionSnapshot** (per action in editorData tracks): id, start, end, sceneIndex?, trimStart?, trimEnd?, **transitionType?**, **transitionDuration?**.
 
 **Nested Schema: AnalysisResult**
 
@@ -778,6 +832,8 @@ This is the most complex model, containing nested subdocuments for analysis and 
 **Status Values**: `pending`, `generating_image`, `image_ready`, `generating_video`, `done`, `error`. The value `image_ready` indicates the image is ready and awaiting user approval before video generation.
 
 **Indexes**: `{ projectId: 1 }`, `{ projectId: 1, updatedAt: -1 }`
+
+**Project assets storage (filesystem)**: Project-level assets are stored under `data/projects/:projectId/assets/` (see §6.5.1). Metadata is kept in `assets.json`; asset files use unique filenames. Not stored in MongoDB.
 
 ---
 
@@ -961,6 +1017,7 @@ Main application state containing:
 - analysis: AnalysisResult from video analysis
 - scenes: ScenarioScene array
 - generatedScenes: Generation status for each scene (status includes `image_ready` for step-by-step approval)
+- editorState: Optional EditorStateSnapshot (timeline rows including video/text/image/audio tracks, clip meta with transitionType/transitionDuration, textOverlays, imageOverlays, audioUrl, audioVolume, exportSettings); persisted on Work and restored when loading the editor.
 
 **Generation actions (step-by-step flow)**:
 - `generateSceneImage(sceneIndex)`: Generate image only; set status to `image_ready`
@@ -1033,7 +1090,15 @@ These are read by `api/client.ts` and sent as headers with each AI-related reque
 | Video style prefix | packages/backend/src/prompts/video.ts |
 | Auth-resolved media (img/video) | packages/frontend/src/components/ui/AuthenticatedMedia.tsx |
 | Auth media URL hook | packages/frontend/src/hooks/useAuthenticatedMediaUrl.ts |
+| Project assets API (frontend) | packages/frontend/src/storage/projectStorage.ts (listProjectAssets, uploadProjectAsset, getProjectAssetUrl, deleteProjectAsset) |
+| Project assets panel / upload / preview | packages/frontend/src/components/project/ProjectAssetsPanel.tsx, AssetUploadDialog.tsx, AssetPreviewModal.tsx |
+| Editor asset picker (select image for overlay) | packages/frontend/src/components/editor/AssetPickerDialog.tsx |
+| Asset routes (backend) | packages/backend/src/routes/assets.ts |
+| Asset storage (backend) | packages/backend/src/storage/assets.ts, path.ts (assetsDir, assetFilePath, assetsJsonPath) |
+| EZFFMPEG (video/audio/text/image, xfade) | packages/backend/src/lib/ezffmpeg/index.ts, types.ts |
+| Export request with images | packages/backend/src/routes/export.ts (resolves asset paths, passes image clips to EZFFMPEG) |
+| Shared export/image types | packages/shared/src/types/project.ts (ProjectAsset, ImageOverlaySnapshot), video.ts (ExportRequestImage) |
 
 ---
 
-*This documentation was generated for LLM context understanding. Last updated: February 2026.*
+*This documentation was generated for LLM context understanding. Last updated: March 2026.*

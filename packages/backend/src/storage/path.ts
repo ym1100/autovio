@@ -25,6 +25,21 @@ export function workJsonPath(projectId: string, workId: string): string {
   return path.join(workDir(projectId, workId), "work.json");
 }
 
+/** Proje asset dizini: data/projects/{projectId}/assets */
+export function assetsDir(projectId: string): string {
+  return path.join(projectDir(projectId), "assets");
+}
+
+/** Asset metadata dosyası */
+export function assetsJsonPath(projectId: string): string {
+  return path.join(assetsDir(projectId), "assets.json");
+}
+
+/** Tek bir asset dosya yolu (filename ile) */
+export function assetFilePath(projectId: string, filename: string): string {
+  return path.join(assetsDir(projectId), filename);
+}
+
 export function referenceVideoPath(projectId: string, workId: string): string {
   return path.join(workDir(projectId, workId), "reference.mp4");
 }

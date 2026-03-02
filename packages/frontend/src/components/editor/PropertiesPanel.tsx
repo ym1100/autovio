@@ -4,36 +4,55 @@ import type {
   ClipMetaMap,
   TextOverlayMap,
   TextOverlay,
+  ImageOverlayMap,
+  ImageOverlay,
   AudioMeta,
   TimelineRow,
+  TransitionType,
 } from "./types";
 
 interface PropertiesPanelProps {
   selectedItem: SelectedItem;
   clipMeta: ClipMetaMap;
   textOverlays: TextOverlayMap;
+  imageOverlays?: ImageOverlayMap;
   audioFile: File | null;
   audioUrl: string | null;
   audioMeta: AudioMeta;
   editorData: TimelineRow[];
   onUpdateTextOverlay: (id: string, partial: Partial<TextOverlay>) => void;
+  onUpdateImageOverlay?: (id: string, partial: Partial<ImageOverlay>) => void;
   onUpdateAudioMeta: (meta: Partial<AudioMeta>) => void;
   onDeleteTextOverlay: (id: string) => void;
+  onDeleteImageOverlay?: (id: string) => void;
   onRemoveAudio: () => void;
-  onUpdateClipMeta?: (actionId: string, partial: Partial<{ trimStart: number; trimEnd: number }>) => void;
+  onUpdateClipMeta?: (actionId: string, partial: Partial<{ trimStart: number; trimEnd: number; transitionType?: TransitionType; transitionDuration?: number }>) => void;
 }
+
+const TRANSITION_OPTIONS: { value: TransitionType; label: string }[] = [
+  { value: "cut", label: "Cut (no transition)" },
+  { value: "fade", label: "Fade" },
+  { value: "dissolve", label: "Dissolve" },
+  { value: "wipeleft", label: "Wipe Left" },
+  { value: "wiperight", label: "Wipe Right" },
+  { value: "slideup", label: "Slide Up" },
+  { value: "slidedown", label: "Slide Down" },
+];
 
 export default function PropertiesPanel({
   selectedItem,
   clipMeta,
   textOverlays,
+  imageOverlays = {},
   audioFile,
   audioUrl,
   audioMeta,
   editorData,
   onUpdateTextOverlay,
+  onUpdateImageOverlay,
   onUpdateAudioMeta,
   onDeleteTextOverlay,
+  onDeleteImageOverlay,
   onRemoveAudio,
   onUpdateClipMeta,
 }: PropertiesPanelProps) {
@@ -73,41 +92,83 @@ export default function PropertiesPanel({
               <p>Type: {meta.videoUrl ? "Video" : "Image"}</p>
             </div>
             {onUpdateClipMeta && meta.videoUrl && (
-              <div className="space-y-2 pt-2 border-t border-gray-800">
-                <p className="text-xs text-gray-500 uppercase tracking-wider">Trim</p>
-                <div>
-                  <label className="text-xs text-gray-400 block mb-1">Trim start (s)</label>
-                  <input
-                    type="number"
-                    min={0}
-                    max={Math.max(0, origDur - trimEnd - 0.5)}
-                    step={0.1}
-                    value={trimStart.toFixed(1)}
-                    onChange={(e) =>
-                      onUpdateClipMeta(selectedItem.actionId, {
-                        trimStart: Math.max(0, Number(e.target.value)),
-                      })
-                    }
-                    className="w-full bg-gray-800 border border-gray-700 rounded px-2 py-1.5 text-sm text-gray-200"
-                  />
+              <>
+                <div className="space-y-2 pt-2 border-t border-gray-800">
+                  <p className="text-xs text-gray-500 uppercase tracking-wider">Trim</p>
+                  <div>
+                    <label className="text-xs text-gray-400 block mb-1">Trim start (s)</label>
+                    <input
+                      type="number"
+                      min={0}
+                      max={Math.max(0, origDur - trimEnd - 0.5)}
+                      step={0.1}
+                      value={trimStart.toFixed(1)}
+                      onChange={(e) =>
+                        onUpdateClipMeta(selectedItem.actionId, {
+                          trimStart: Math.max(0, Number(e.target.value)),
+                        })
+                      }
+                      className="w-full bg-gray-800 border border-gray-700 rounded px-2 py-1.5 text-sm text-gray-200"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs text-gray-400 block mb-1">Trim end (s)</label>
+                    <input
+                      type="number"
+                      min={0}
+                      max={Math.max(0, origDur - trimStart - 0.5)}
+                      step={0.1}
+                      value={trimEnd.toFixed(1)}
+                      onChange={(e) =>
+                        onUpdateClipMeta(selectedItem.actionId, {
+                          trimEnd: Math.max(0, Number(e.target.value)),
+                        })
+                      }
+                      className="w-full bg-gray-800 border border-gray-700 rounded px-2 py-1.5 text-sm text-gray-200"
+                    />
+                  </div>
                 </div>
-                <div>
-                  <label className="text-xs text-gray-400 block mb-1">Trim end (s)</label>
-                  <input
-                    type="number"
-                    min={0}
-                    max={Math.max(0, origDur - trimStart - 0.5)}
-                    step={0.1}
-                    value={trimEnd.toFixed(1)}
-                    onChange={(e) =>
-                      onUpdateClipMeta(selectedItem.actionId, {
-                        trimEnd: Math.max(0, Number(e.target.value)),
-                      })
-                    }
-                    className="w-full bg-gray-800 border border-gray-700 rounded px-2 py-1.5 text-sm text-gray-200"
-                  />
-                </div>
-              </div>
+                {videoTrack && videoTrack.actions.sort((a, b) => a.start - b.start).findIndex((a) => a.id === selectedItem.actionId) < videoTrack.actions.length - 1 && (
+                  <div className="space-y-2 pt-2 border-t border-gray-800">
+                    <p className="text-xs text-gray-500 uppercase tracking-wider">Transition to next</p>
+                    <div>
+                      <label className="text-xs text-gray-400 block mb-1">Type</label>
+                      <select
+                        value={meta.transitionType ?? "cut"}
+                        onChange={(e) =>
+                          onUpdateClipMeta(selectedItem.actionId, {
+                            transitionType: e.target.value as TransitionType,
+                            transitionDuration: e.target.value === "cut" ? 0 : (meta.transitionDuration ?? 0.5),
+                          })
+                        }
+                        className="w-full bg-gray-800 border border-gray-700 rounded px-2 py-1.5 text-sm text-gray-200"
+                      >
+                        {TRANSITION_OPTIONS.map((opt) => (
+                          <option key={opt.value} value={opt.value}>{opt.label}</option>
+                        ))}
+                      </select>
+                    </div>
+                    {(meta.transitionType ?? "cut") !== "cut" && (
+                      <div>
+                        <label className="text-xs text-gray-400 block mb-1">Duration (s)</label>
+                        <input
+                          type="number"
+                          min={0.1}
+                          max={2}
+                          step={0.1}
+                          value={(meta.transitionDuration ?? 0.5).toFixed(1)}
+                          onChange={(e) =>
+                            onUpdateClipMeta(selectedItem.actionId, {
+                              transitionDuration: Math.max(0.1, Math.min(2, Number(e.target.value))),
+                            })
+                          }
+                          className="w-full bg-gray-800 border border-gray-700 rounded px-2 py-1.5 text-sm text-gray-200"
+                        />
+                      </div>
+                    )}
+                  </div>
+                )}
+              </>
             )}
           </>
         ) : (
@@ -209,6 +270,97 @@ export default function PropertiesPanel({
           className="flex items-center gap-1.5 text-xs text-red-400 hover:text-red-300 bg-red-900/20 hover:bg-red-900/40 px-3 py-1.5 rounded transition-colors w-full justify-center"
         >
           <Trash2 size={12} /> Delete Text Overlay
+        </button>
+      </div>
+    );
+  }
+
+  if (selectedItem.type === "image") {
+    const overlay = imageOverlays[selectedItem.actionId];
+    if (!overlay || !onUpdateImageOverlay || !onDeleteImageOverlay) {
+      return (
+        <div className="bg-gray-900 rounded-lg p-4">
+          <p className="text-sm text-gray-400">Image overlay not found</p>
+        </div>
+      );
+    }
+
+    return (
+      <div className="bg-gray-900 rounded-lg p-4 space-y-3">
+        <p className="text-xs text-gray-500 uppercase tracking-wider">Image Properties</p>
+
+        <div>
+          <label className="text-xs text-gray-400 block mb-1">Width (px)</label>
+          <input
+            type="number"
+            min={8}
+            max={800}
+            value={overlay.width}
+            onChange={(e) => onUpdateImageOverlay(overlay.id, { width: Number(e.target.value) })}
+            className="w-full bg-gray-800 border border-gray-700 rounded px-2 py-1.5 text-sm text-gray-200"
+          />
+        </div>
+        <div>
+          <label className="text-xs text-gray-400 block mb-1">Height (px)</label>
+          <input
+            type="number"
+            min={8}
+            max={800}
+            value={overlay.height}
+            onChange={(e) => onUpdateImageOverlay(overlay.id, { height: Number(e.target.value) })}
+            className="w-full bg-gray-800 border border-gray-700 rounded px-2 py-1.5 text-sm text-gray-200"
+          />
+        </div>
+        <div>
+          <label className="text-xs text-gray-400 block mb-1">Position X: {overlay.centerX}px</label>
+          <input
+            type="range"
+            min={-500}
+            max={500}
+            value={overlay.centerX}
+            onChange={(e) => onUpdateImageOverlay(overlay.id, { centerX: Number(e.target.value) })}
+            className="w-full accent-amber-500"
+          />
+        </div>
+        <div>
+          <label className="text-xs text-gray-400 block mb-1">Position Y: {overlay.centerY}px</label>
+          <input
+            type="range"
+            min={-500}
+            max={500}
+            value={overlay.centerY}
+            onChange={(e) => onUpdateImageOverlay(overlay.id, { centerY: Number(e.target.value) })}
+            className="w-full accent-amber-500"
+          />
+        </div>
+        <div>
+          <label className="text-xs text-gray-400 block mb-1">Opacity: {Math.round(overlay.opacity * 100)}%</label>
+          <input
+            type="range"
+            min={0}
+            max={100}
+            value={Math.round(overlay.opacity * 100)}
+            onChange={(e) => onUpdateImageOverlay(overlay.id, { opacity: Number(e.target.value) / 100 })}
+            className="w-full accent-amber-500"
+          />
+        </div>
+        <div>
+          <label className="text-xs text-gray-400 block mb-1">Rotation: {overlay.rotation}°</label>
+          <input
+            type="number"
+            min={-180}
+            max={180}
+            value={overlay.rotation}
+            onChange={(e) => onUpdateImageOverlay(overlay.id, { rotation: Number(e.target.value) })}
+            className="w-full bg-gray-800 border border-gray-700 rounded px-2 py-1.5 text-sm text-gray-200"
+          />
+        </div>
+
+        <button
+          onClick={() => onDeleteImageOverlay(overlay.id)}
+          className="flex items-center gap-1.5 text-xs text-red-400 hover:text-red-300 bg-red-900/20 hover:bg-red-900/40 px-3 py-1.5 rounded transition-colors w-full justify-center"
+        >
+          <Trash2 size={12} /> Delete Image Overlay
         </button>
       </div>
     );

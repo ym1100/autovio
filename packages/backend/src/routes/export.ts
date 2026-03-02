@@ -7,6 +7,7 @@ import { EZFFMPEG } from "../lib/ezffmpeg/index.js";
 import type { ClipObj } from "../lib/ezffmpeg/index.js";
 import { projectExists } from "../storage/projects.js";
 import { resolveSceneVideoPath, workExists, getResolvedWorkAudioPath } from "../storage/works.js";
+import { getAssetFilePath } from "../storage/assets.js";
 import type { ExportRequest } from "@viragen/shared";
 
 const router = Router();
@@ -14,7 +15,7 @@ const router = Router();
 router.post("/", async (req, res, next) => {
   try {
     const body = req.body as ExportRequest;
-    const { projectId, workId, clips, audio, texts, options } = body;
+    const { projectId, workId, clips, audio, texts, images, options } = body;
 
     if (!projectId || !workId || !clips?.length) {
       res.status(400).json({ error: "projectId, workId and clips are required" });
@@ -69,6 +70,29 @@ router.post("/", async (req, res, next) => {
           end: videoTrackEnd,
           cutFrom: 0,
           volume: audio.volume ?? 1,
+        });
+      }
+    }
+
+    // Add image overlays (project assets)
+    if (images?.length) {
+      for (const img of images) {
+        const assetPath = await getAssetFilePath(projectId, img.assetId);
+        if (!assetPath) {
+          res.status(404).json({ error: `Asset not found: ${img.assetId}` });
+          return;
+        }
+        clipObjs.push({
+          type: "image",
+          url: path.resolve(assetPath),
+          position: img.position,
+          end: img.end,
+          width: img.width,
+          height: img.height,
+          x: img.x,
+          y: img.y,
+          opacity: img.opacity,
+          rotation: img.rotation,
         });
       }
     }

@@ -10,6 +10,7 @@ import ConfirmModal from "./ui/ConfirmModal";
 import { SkeletonCardList } from "./ui/SkeletonCard";
 import { StyleGuideForm } from "./ui/StyleGuideForm";
 import ExtractFromLandingModal from "./ui/ExtractFromLandingModal";
+import ProjectAssetsPanel from "./project/ProjectAssetsPanel";
 
 interface WorksListProps {
   projectId: string;
@@ -38,6 +39,7 @@ export default function WorksList({ projectId }: WorksListProps) {
   const [deleting, setDeleting] = useState(false);
   const [openScenarioAnalysis, setOpenScenarioAnalysis] = useState(false);
   const [openImageVideo, setOpenImageVideo] = useState(false);
+  const [openProjectAssets, setOpenProjectAssets] = useState(false);
   const [showExtractFromLanding, setShowExtractFromLanding] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -295,6 +297,23 @@ export default function WorksList({ projectId }: WorksListProps) {
                       placeholder="e.g. smooth transitions, cinematic motion..."
                     />
                   </div>
+                </div>
+              )}
+            </div>
+
+            {/* Project Assets */}
+            <div className="rounded-lg border border-gray-700/70 overflow-hidden">
+              <button
+                type="button"
+                onClick={() => setOpenProjectAssets(!openProjectAssets)}
+                className="w-full flex items-center justify-between px-3 py-2.5 text-left hover:bg-gray-800/40 transition-colors"
+              >
+                <span className="text-sm font-medium text-gray-400">Project assets</span>
+                {openProjectAssets ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+              </button>
+              {openProjectAssets && (
+                <div className="px-3 pb-3 pt-0 border-t border-gray-700/50">
+                  <ProjectAssetsPanel projectId={projectId} />
                 </div>
               )}
             </div>

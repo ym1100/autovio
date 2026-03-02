@@ -4,6 +4,7 @@ import type {
   ClipMeta,
   ClipMetaMap,
   TextOverlayMap,
+  ImageOverlayMap,
   SelectedItem,
   ExportSettings,
   TimelineRow,
@@ -13,6 +14,8 @@ interface VideoPreviewProps {
   clipMeta: ClipMetaMap;
   selectedItem: SelectedItem;
   textOverlays: TextOverlayMap;
+  imageOverlays?: ImageOverlayMap;
+  imageAssetUrls?: Record<string, string>;
   editorData: TimelineRow[];
   currentTime: number;
   exportSettings: ExportSettings;
@@ -58,6 +61,10 @@ export function createVideoEffect(
       id: "textEffect",
       name: "Text",
     },
+    imageEffect: {
+      id: "imageEffect",
+      name: "Image",
+    },
     audioEffect: {
       id: "audioEffect",
       name: "Audio",
@@ -67,7 +74,7 @@ export function createVideoEffect(
 
 const VideoPreview = forwardRef<HTMLVideoElement, VideoPreviewProps>(
   function VideoPreview(
-    { clipMeta, selectedItem, textOverlays, editorData, currentTime, exportSettings },
+    { clipMeta, selectedItem, textOverlays, imageOverlays = {}, imageAssetUrls = {}, editorData, currentTime, exportSettings },
     ref,
   ) {
     const containerRef = useRef<HTMLDivElement>(null);
@@ -123,6 +130,15 @@ const VideoPreview = forwardRef<HTMLVideoElement, VideoPreviewProps>(
         .map((a) => textOverlays[a.id])
         .filter(Boolean);
     }, [editorData, currentTime, textOverlays]);
+
+    const visibleImages = useMemo(() => {
+      const imageTrack = editorData.find((r) => r.id === "image-track");
+      if (!imageTrack) return [];
+      return imageTrack.actions
+        .filter((a) => currentTime >= a.start && currentTime <= a.end)
+        .map((a) => imageOverlays[a.id])
+        .filter(Boolean);
+    }, [editorData, currentTime, imageOverlays]);
 
     // Ensure scale is valid (at least a small positive number)
     const safeScale = scale > 0 ? scale : 0.1;
@@ -187,6 +203,31 @@ const VideoPreview = forwardRef<HTMLVideoElement, VideoPreviewProps>(
                 {overlay.text}
               </div>
             ))}
+
+            {visibleImages.map((overlay) => {
+              const src = imageAssetUrls[overlay.assetId] || overlay.assetUrl;
+              if (!src) return null;
+              return (
+                <div
+                  key={overlay.id}
+                  className="absolute pointer-events-none"
+                  style={{
+                    left: "50%",
+                    top: "50%",
+                    width: overlay.width,
+                    height: overlay.height,
+                    transform: `translate(calc(-50% + ${overlay.centerX}px), calc(-50% + ${overlay.centerY}px)) rotate(${overlay.rotation}deg)`,
+                    opacity: overlay.opacity,
+                  }}
+                >
+                  <img
+                    src={src}
+                    alt=""
+                    className="w-full h-full object-contain"
+                  />
+                </div>
+              );
+            })}
           </div>
         </div>
         {displayMeta && (

@@ -39,12 +39,25 @@ export interface ExportRequestText {
   y?: number;
 }
 
+export interface ExportRequestImage {
+  assetId: string;
+  position: number;
+  end: number;
+  width: number;
+  height: number;
+  x: number;
+  y: number;
+  opacity?: number;
+  rotation?: number;
+}
+
 export interface ExportRequest {
   projectId: string;
   workId: string;
   clips: ExportRequestClip[];
   audio?: { volume?: number; audioUrl?: string };
   texts?: ExportRequestText[];
+  images?: ExportRequestImage[];
   options: {
     width: number;
     height: number;

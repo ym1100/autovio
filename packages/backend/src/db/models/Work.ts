@@ -86,6 +86,22 @@ const TimelineActionSnapshotSchema = new Schema(
     sceneIndex: { type: Number },
     trimStart: { type: Number },
     trimEnd: { type: Number },
+    transitionType: { type: String },
+    transitionDuration: { type: Number },
+  },
+  { _id: false }
+);
+
+const ImageOverlaySnapshotSchema = new Schema(
+  {
+    assetId: { type: String, required: true },
+    width: { type: Number, default: 128 },
+    height: { type: Number, default: 128 },
+    centerX: { type: Number, default: 0 },
+    centerY: { type: Number, default: 0 },
+    opacity: { type: Number, default: 1 },
+    rotation: { type: Number, default: 0 },
+    maintainAspectRatio: { type: Boolean, default: true },
   },
   { _id: false }
 );
@@ -106,9 +122,11 @@ const EditorStateSnapshotSchema = new Schema(
     editorData: {
       videoTrack: [TimelineActionSnapshotSchema],
       textTrack: [TimelineActionSnapshotSchema],
+      imageTrack: [TimelineActionSnapshotSchema],
       audioTrack: [TimelineActionSnapshotSchema],
     },
     textOverlays: { type: Schema.Types.Mixed, default: {} },
+    imageOverlays: { type: Schema.Types.Mixed, default: {} },
     audioUrl: { type: String },
     audioVolume: { type: Number, default: 1 },
     exportSettings: {

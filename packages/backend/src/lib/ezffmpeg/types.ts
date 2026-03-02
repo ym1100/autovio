@@ -52,7 +52,20 @@ export interface TextClipObj {
   padding?: number;
 }
 
-export type ClipObj = VideoClipObj | AudioClipObj | TextClipObj;
+export interface ImageClipObj {
+  type: "image";
+  url: string;
+  position: number;
+  end: number;
+  width: number;
+  height: number;
+  x: number;
+  y: number;
+  opacity?: number;
+  rotation?: number;
+}
+
+export type ClipObj = VideoClipObj | AudioClipObj | TextClipObj | ImageClipObj;
 
 export interface InternalVideoClip extends VideoClipObj {
   volume: number;
@@ -92,7 +105,11 @@ export interface InternalTextClip {
   padding?: number;
 }
 
-export type InternalClip = InternalVideoClip | InternalAudioClip;
+export interface InternalImageClip extends ImageClipObj {
+  type: "image";
+}
+
+export type InternalClip = InternalVideoClip | InternalAudioClip | InternalImageClip;
 
 export interface ExportParams {
   outputPath?: string;

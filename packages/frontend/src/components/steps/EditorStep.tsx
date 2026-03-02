@@ -1,5 +1,5 @@
 import { useState, useMemo, useCallback, useRef, useEffect } from "react";
-import { ArrowLeft, Type, Music, Download, Save, Loader2 } from "lucide-react";
+import { ArrowLeft, Type, Image as ImageIcon, Music, Download, Save, Loader2 } from "lucide-react";
 import { useStore, type GeneratedScene } from "../../store/useStore";
 import * as projectStorage from "../../storage/projectStorage";
 import { getAuthToken } from "../../store/useAuthStore";
@@ -12,9 +12,12 @@ import type {
   ClipMeta,
   TextOverlayMap,
   TextOverlay,
+  ImageOverlayMap,
+  ImageOverlay,
   AudioMeta,
   ExportSettings,
   SelectedItem,
+  TransitionType,
 } from "../editor/types";
 import type { TimelineEffect } from "@xzdarcy/timeline-engine";
 import type { ScenarioScene, EditorStateSnapshot } from "@viragen/shared";
@@ -22,6 +25,8 @@ import VideoPreview, { createVideoEffect } from "../editor/VideoPreview";
 import PropertiesPanel from "../editor/PropertiesPanel";
 import EditorTimeline from "../editor/EditorTimeline";
 import ExportDialog from "../editor/ExportDialog";
+import AssetPickerDialog from "../editor/AssetPickerDialog";
+import type { ProjectAsset } from "@viragen/shared";
 
 function resolveUrl(url: string | undefined, map: Record<string, string>): string | undefined {
   if (!url) return undefined;
@@ -41,6 +46,7 @@ function buildDisplayClipMeta(clipMeta: ClipMetaMap, resolvedUrlMap: Record<stri
 }
 
 let textIdCounter = 0;
+let imageIdCounter = 0;
 
 function scenesToTimelineData(
   generatedScenes: GeneratedScene[],
@@ -60,13 +66,15 @@ function scenesToTimelineData(
       cursor = end;
 
       clipMeta[actionId] = {
-        sceneIndex: s.sceneIndex,  // Use actual scene index, not array index
+        sceneIndex: s.sceneIndex,
         imageUrl: s.imageUrl,
         videoUrl: s.videoUrl,
         label: `Scene ${s.sceneIndex}`,
         originalDuration: duration,
         trimStart: 0,
         trimEnd: 0,
+        transitionType: "cut",
+        transitionDuration: 0,
       };
 
       return {
@@ -82,6 +90,7 @@ function scenesToTimelineData(
   const editorData: TimelineRow[] = [
     { id: "video-track", actions: videoActions, rowHeight: 40 },
     { id: "text-track", actions: [], rowHeight: 40 },
+    { id: "image-track", actions: [], rowHeight: 40 },
     { id: "audio-track", actions: [], rowHeight: 40 },
   ];
 
@@ -91,10 +100,11 @@ function scenesToTimelineData(
 function reconstructFromSavedState(
   saved: EditorStateSnapshot,
   generatedScenes: GeneratedScene[],
-): { editorData: TimelineRow[]; clipMeta: ClipMetaMap; textOverlays: TextOverlayMap; exportSettings: ExportSettings } {
+): { editorData: TimelineRow[]; clipMeta: ClipMetaMap; textOverlays: TextOverlayMap; imageOverlays: ImageOverlayMap; exportSettings: ExportSettings } {
   const clipMeta: ClipMetaMap = {};
   const videoTrack = saved.editorData?.videoTrack ?? [];
   const textTrack = saved.editorData?.textTrack ?? [];
+  const imageTrack = saved.editorData?.imageTrack ?? [];
   const audioTrack = saved.editorData?.audioTrack ?? [];
 
   videoTrack.forEach((a) => {
@@ -107,6 +117,8 @@ function reconstructFromSavedState(
       originalDuration: (a.end - a.start) + (a.trimStart ?? 0) + (a.trimEnd ?? 0),
       trimStart: a.trimStart ?? 0,
       trimEnd: a.trimEnd ?? 0,
+      transitionType: ((a as { transitionType?: string }).transitionType as TransitionType) ?? "cut",
+      transitionDuration: (a as { transitionDuration?: number }).transitionDuration ?? 0,
     };
   });
 
@@ -120,6 +132,23 @@ function reconstructFromSavedState(
         fontColor: snap.fontColor,
         centerX: snap.centerX,
         centerY: snap.centerY,
+      };
+    }
+  }
+
+  const imageOverlays: ImageOverlayMap = {};
+  if (saved.imageOverlays) {
+    for (const [id, snap] of Object.entries(saved.imageOverlays)) {
+      imageOverlays[id] = {
+        id,
+        assetId: snap.assetId,
+        width: snap.width,
+        height: snap.height,
+        centerX: snap.centerX,
+        centerY: snap.centerY,
+        opacity: snap.opacity,
+        rotation: snap.rotation,
+        maintainAspectRatio: snap.maintainAspectRatio ?? true,
       };
     }
   }
@@ -150,6 +179,18 @@ function reconstructFromSavedState(
       rowHeight: 40,
     },
     {
+      id: "image-track",
+      actions: imageTrack.map((a) => ({
+        id: a.id,
+        start: a.start,
+        end: a.end,
+        effectId: "imageEffect",
+        flexible: true,
+        movable: true,
+      })),
+      rowHeight: 40,
+    },
+    {
       id: "audio-track",
       actions: audioTrack.map((a) => ({
         ...a,
@@ -165,6 +206,7 @@ function reconstructFromSavedState(
     editorData,
     clipMeta,
     textOverlays,
+    imageOverlays,
     exportSettings: saved.exportSettings ?? { width: 1080, height: 1920, fps: 30 },
   };
 }
@@ -194,6 +236,7 @@ export default function EditorStep() {
     return {
       ...initialFromScenes,
       textOverlays: {} as TextOverlayMap,
+      imageOverlays: {} as ImageOverlayMap,
       exportSettings: { width: 1080, height: 1920, fps: 30 } as ExportSettings,
     };
   }, [savedEditorState, generatedScenes, initialFromScenes]);
@@ -202,6 +245,7 @@ export default function EditorStep() {
   const [clipMeta, setClipMeta] = useState<ClipMetaMap>(initial.clipMeta);
   const [resolvedUrlMap, setResolvedUrlMap] = useState<Record<string, string>>({});
   const [textOverlays, setTextOverlays] = useState<TextOverlayMap>(initial.textOverlays);
+  const [imageOverlays, setImageOverlays] = useState<ImageOverlayMap>(initial.imageOverlays);
   const [audioFile, setAudioFile] = useState<File | null>(null);
   const [audioUrl, setAudioUrl] = useState<string | null>(savedEditorState?.audioUrl ?? null);
   const [audioMeta, setAudioMeta] = useState<AudioMeta>({
@@ -214,6 +258,7 @@ export default function EditorStep() {
   );
   const [currentTime, setCurrentTime] = useState(0);
   const [showExportDialog, setShowExportDialog] = useState(false);
+  const [showAssetPicker, setShowAssetPicker] = useState(false);
   const [exportSettings, setExportSettings] = useState<ExportSettings>(initial.exportSettings);
   const [isDirty, setIsDirty] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -241,6 +286,7 @@ export default function EditorStep() {
     setEditorData(initial.editorData);
     setClipMeta(initial.clipMeta);
     setTextOverlays(initial.textOverlays);
+    setImageOverlays(initial.imageOverlays);
     setExportSettings(initial.exportSettings);
     if (savedEditorState) {
       setAudioUrl(savedEditorState.audioUrl ?? null);
@@ -306,6 +352,44 @@ export default function EditorStep() {
     };
   }, [clipMeta]);
 
+  // Resolve project asset URLs for image overlays
+  const [resolvedAssetUrls, setResolvedAssetUrls] = useState<Record<string, string>>({});
+  useEffect(() => {
+    if (!currentProjectId) return;
+    const assetIds = new Set<string>();
+    Object.values(imageOverlays).forEach((o) => assetIds.add(o.assetId));
+    if (assetIds.size === 0) {
+      setResolvedAssetUrls((prev) => {
+        Object.values(prev).forEach((u) => URL.revokeObjectURL(u));
+        return {};
+      });
+      return;
+    }
+    const token = getAuthToken();
+    const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
+    const created: string[] = [];
+    let revoked = false;
+    assetIds.forEach((assetId) => {
+      const url = projectStorage.getProjectAssetUrl(currentProjectId, assetId);
+      fetch(url, { headers })
+        .then((res) => (res.ok ? res.blob() : null))
+        .then((blob) => {
+          if (!blob || revoked) return;
+          const blobUrl = URL.createObjectURL(blob);
+          created.push(blobUrl);
+          setResolvedAssetUrls((prev) => ({ ...prev, [assetId]: blobUrl }));
+        })
+        .catch(() => {});
+    });
+    return () => {
+      revoked = true;
+      setResolvedAssetUrls((prev) => {
+        Object.values(prev).forEach((u) => URL.revokeObjectURL(u));
+        return {};
+      });
+    };
+  }, [currentProjectId, imageOverlays]);
+
   const displayClipMeta = useMemo(
     () => buildDisplayClipMeta(clipMeta, resolvedUrlMap),
     [clipMeta, resolvedUrlMap],
@@ -351,9 +435,16 @@ export default function EditorStep() {
               sceneIndex: meta?.sceneIndex,
               trimStart: meta?.trimStart,
               trimEnd: meta?.trimEnd,
+              transitionType: meta?.transitionType,
+              transitionDuration: meta?.transitionDuration,
             };
           }) ?? [],
           textTrack: editorData.find((r) => r.id === "text-track")?.actions.map((a) => ({
+            id: a.id,
+            start: a.start,
+            end: a.end,
+          })) ?? [],
+          imageTrack: editorData.find((r) => r.id === "image-track")?.actions.map((a) => ({
             id: a.id,
             start: a.start,
             end: a.end,
@@ -368,6 +459,12 @@ export default function EditorStep() {
           Object.entries(textOverlays).map(([id, o]) => [
             id,
             { text: o.text, fontSize: o.fontSize, fontColor: o.fontColor, centerX: o.centerX, centerY: o.centerY },
+          ])
+        ),
+        imageOverlays: Object.fromEntries(
+          Object.entries(imageOverlays).map(([id, o]) => [
+            id,
+            { assetId: o.assetId, width: o.width, height: o.height, centerX: o.centerX, centerY: o.centerY, opacity: o.opacity, rotation: o.rotation, maintainAspectRatio: o.maintainAspectRatio },
           ])
         ),
         audioUrl: audioUrl ?? undefined,
@@ -391,6 +488,7 @@ export default function EditorStep() {
     editorData,
     clipMeta,
     textOverlays,
+    imageOverlays,
     audioUrl,
     audioMeta,
     exportSettings,
@@ -410,25 +508,27 @@ export default function EditorStep() {
     return () => window.removeEventListener("keydown", onKey);
   }, [handleSave]);
 
-  const onUpdateClipMeta = useCallback((actionId: string, partial: Partial<{ trimStart: number; trimEnd: number }>) => {
+  const onUpdateClipMeta = useCallback((actionId: string, partial: Partial<{ trimStart: number; trimEnd: number; transitionType?: TransitionType; transitionDuration?: number }>) => {
     const meta = clipMeta[actionId];
-    const newTrimStart = partial.trimStart ?? meta?.trimStart ?? 0;
-    const newTrimEnd = partial.trimEnd ?? meta?.trimEnd ?? 0;
-    const orig = meta?.originalDuration ?? 5;
-    const newDuration = Math.max(0.5, orig - newTrimStart - newTrimEnd);
     setClipMeta((prev) => ({ ...prev, [actionId]: { ...prev[actionId], ...partial } }));
-    setEditorData((d) =>
-      d.map((row) =>
-        row.id === "video-track"
-          ? {
-              ...row,
-              actions: row.actions.map((a) =>
-                a.id === actionId ? { ...a, end: a.start + newDuration } : a
-              ),
-            }
-          : row
-      )
-    );
+    if (partial.trimStart !== undefined || partial.trimEnd !== undefined) {
+      const newTrimStart = partial.trimStart ?? meta?.trimStart ?? 0;
+      const newTrimEnd = partial.trimEnd ?? meta?.trimEnd ?? 0;
+      const orig = meta?.originalDuration ?? 5;
+      const newDuration = Math.max(0.5, orig - newTrimStart - newTrimEnd);
+      setEditorData((d) =>
+        d.map((row) =>
+          row.id === "video-track"
+            ? {
+                ...row,
+                actions: row.actions.map((a) =>
+                  a.id === actionId ? { ...a, end: a.start + newDuration } : a
+                ),
+              }
+            : row
+        )
+      );
+    }
     setIsDirty(true);
   }, [clipMeta]);
 
@@ -582,6 +682,81 @@ export default function EditorStep() {
     handleAudioChange(null);
   }, [handleAudioChange]);
 
+  const addImage = useCallback(
+    (asset: ProjectAsset) => {
+      setIsDirty(true);
+      const id = `image-${++imageIdCounter}`;
+      const totalDuration =
+        editorData.find((r) => r.id === "video-track")?.actions.reduce((max, a) => Math.max(max, a.end), 0) || 10;
+      const start = Math.min(currentTime, Math.max(0, totalDuration - 5));
+      const end = Math.min(start + 5, totalDuration);
+
+      const newOverlay: ImageOverlay = {
+        id,
+        assetId: asset.id,
+        width: Math.min(128, asset.width ?? 128),
+        height: Math.min(128, asset.height ?? 128),
+        centerX: 0,
+        centerY: 0,
+        opacity: 1,
+        rotation: 0,
+        maintainAspectRatio: true,
+      };
+
+      setImageOverlays((prev) => ({ ...prev, [id]: newOverlay }));
+      setEditorData((prev) =>
+        prev.map((row) =>
+          row.id === "image-track"
+            ? {
+                ...row,
+                actions: [
+                  ...row.actions,
+                  {
+                    id,
+                    start,
+                    end,
+                    effectId: "imageEffect",
+                    flexible: true,
+                    movable: true,
+                  },
+                ],
+              }
+            : row,
+        ),
+      );
+      setSelectedItem({ type: "image", actionId: id });
+    },
+    [editorData, currentTime],
+  );
+
+  const onUpdateImageOverlay = useCallback((id: string, partial: Partial<ImageOverlay>) => {
+    setImageOverlays((prev) => ({
+      ...prev,
+      [id]: { ...prev[id], ...partial },
+    }));
+    setIsDirty(true);
+  }, []);
+
+  const onDeleteImageOverlay = useCallback(
+    (id: string) => {
+      setIsDirty(true);
+      setImageOverlays((prev) => {
+        const next = { ...prev };
+        delete next[id];
+        return next;
+      });
+      setEditorData((prev) =>
+        prev.map((row) =>
+          row.id === "image-track" ? { ...row, actions: row.actions.filter((a) => a.id !== id) } : row,
+        ),
+      );
+      if (selectedItem?.actionId === id) {
+        setSelectedItem(null);
+      }
+    },
+    [selectedItem],
+  );
+
   return (
     <div className="space-y-4">
       {/* Toolbar */}
@@ -601,6 +776,12 @@ export default function EditorStep() {
             className="flex items-center gap-1.5 text-xs bg-teal-600/20 hover:bg-teal-600/40 text-teal-300 border border-teal-600/40 px-3 py-1.5 rounded-lg transition-colors"
           >
             <Type size={14} /> + Text
+          </button>
+          <button
+            onClick={() => setShowAssetPicker(true)}
+            className="flex items-center gap-1.5 text-xs bg-amber-600/20 hover:bg-amber-600/40 text-amber-300 border border-amber-600/40 px-3 py-1.5 rounded-lg transition-colors"
+          >
+            <ImageIcon size={14} /> + Image
           </button>
           <button
             onClick={() => audioInputRef.current?.click()}
@@ -652,6 +833,8 @@ export default function EditorStep() {
             clipMeta={displayClipMeta}
             selectedItem={selectedItem}
             textOverlays={textOverlays}
+            imageOverlays={imageOverlays}
+            imageAssetUrls={resolvedAssetUrls}
             editorData={editorData}
             currentTime={currentTime}
             exportSettings={exportSettings}
@@ -663,13 +846,16 @@ export default function EditorStep() {
             selectedItem={selectedItem}
             clipMeta={displayClipMeta}
             textOverlays={textOverlays}
+            imageOverlays={imageOverlays}
             audioFile={audioFile}
             audioUrl={audioUrl}
             audioMeta={audioMeta}
             editorData={editorData}
             onUpdateTextOverlay={onUpdateTextOverlay}
+            onUpdateImageOverlay={onUpdateImageOverlay}
             onUpdateAudioMeta={onUpdateAudioMeta}
             onDeleteTextOverlay={onDeleteTextOverlay}
+            onDeleteImageOverlay={onDeleteImageOverlay}
             onRemoveAudio={onRemoveAudio}
             onUpdateClipMeta={onUpdateClipMeta}
           />
@@ -682,6 +868,7 @@ export default function EditorStep() {
         effects={effects}
         clipMeta={displayClipMeta}
         textOverlays={textOverlays}
+        imageOverlays={imageOverlays}
         audioFile={audioFile}
         onChange={handleEditorChange}
         selectedItem={selectedItem}
@@ -696,12 +883,20 @@ export default function EditorStep() {
         }}
       />
 
+      <AssetPickerDialog
+        open={showAssetPicker}
+        projectId={currentProjectId}
+        onSelect={addImage}
+        onClose={() => setShowAssetPicker(false)}
+      />
+
       {/* Export Dialog */}
       {showExportDialog && (
         <ExportDialog
           editorData={editorData}
           clipMeta={displayClipMeta}
           textOverlays={textOverlays}
+          imageOverlays={imageOverlays}
           audioFile={audioFile}
           audioUrl={audioUrl}
           audioMeta={audioMeta}

@@ -113,6 +113,30 @@ export interface ProjectMeta {
   updatedAt: number;
 }
 
+/** Proje asset'i (logo, görsel, ses, font). */
+export interface ProjectAsset {
+  id: string;
+  name: string;
+  type: "image" | "video" | "audio" | "font";
+  filename: string;
+  mimeType: string;
+  size: number;
+  width?: number;
+  height?: number;
+  duration?: number;
+  createdAt: number;
+  updatedAt: number;
+  tags?: string[];
+  thumbnail?: string;
+}
+
+/** Proje asset listesi. */
+export interface ProjectAssetList {
+  assets: ProjectAsset[];
+  totalSize: number;
+  count: number;
+}
+
 /** Editor'da kaydedilen timeline/overlay/audio state (sayfa yenilense bile geri yüklenir). */
 export interface TimelineActionSnapshot {
   id: string;
@@ -121,6 +145,8 @@ export interface TimelineActionSnapshot {
   sceneIndex?: number;
   trimStart?: number;
   trimEnd?: number;
+  transitionType?: string;
+  transitionDuration?: number;
 }
 
 export interface TextOverlaySnapshot {
@@ -131,13 +157,27 @@ export interface TextOverlaySnapshot {
   centerY: number;
 }
 
+/** Image overlay snapshot (persisted in work). */
+export interface ImageOverlaySnapshot {
+  assetId: string;
+  width: number;
+  height: number;
+  centerX: number;
+  centerY: number;
+  opacity: number;
+  rotation: number;
+  maintainAspectRatio?: boolean;
+}
+
 export interface EditorStateSnapshot {
   editorData: {
     videoTrack: TimelineActionSnapshot[];
     textTrack: TimelineActionSnapshot[];
+    imageTrack?: TimelineActionSnapshot[];
     audioTrack: TimelineActionSnapshot[];
   };
   textOverlays: Record<string, TextOverlaySnapshot>;
+  imageOverlays?: Record<string, ImageOverlaySnapshot>;
   audioUrl?: string;
   audioVolume: number;
   exportSettings: {

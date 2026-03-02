@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Download, Loader2, X } from "lucide-react";
-import type { TimelineRow, ClipMetaMap, TextOverlayMap, AudioMeta, ExportSettings } from "./types";
+import type { TimelineRow, ClipMetaMap, TextOverlayMap, ImageOverlayMap, AudioMeta, ExportSettings } from "./types";
 import type { ExportRequest } from "@viragen/shared";
 import type { ScenarioScene } from "@viragen/shared";
 import { getAuthToken } from "../../store/useAuthStore";
@@ -10,6 +10,7 @@ interface ExportDialogProps {
   editorData: TimelineRow[];
   clipMeta: ClipMetaMap;
   textOverlays: TextOverlayMap;
+  imageOverlays?: ImageOverlayMap;
   audioFile: File | null;
   audioUrl: string | null;
   audioMeta: AudioMeta;
@@ -33,6 +34,7 @@ export default function ExportDialog({
   editorData,
   clipMeta,
   textOverlays,
+  imageOverlays = {},
   audioFile,
   audioUrl,
   audioMeta,
@@ -66,17 +68,39 @@ export default function ExportDialog({
         .filter((a) => clipMeta[a.id]?.videoUrl)
         .map((a) => {
           const meta = clipMeta[a.id]!;
-          const scene = scenes.find((s) => s.scene_index === meta.sceneIndex);
-          const transition = scene?.transition ?? "cut";
+          const transition = meta.transitionType ?? "cut";
+          const duration = meta.transitionDuration ?? (transition === "cut" ? 0 : 0.5);
           return {
             sceneIndex: meta.sceneIndex,
             position: a.start,
             end: a.end,
             cutFrom: meta.trimStart ?? 0,
             transition,
-            transitionDuration: transition === "cut" ? 0 : 0.5,
+            transitionDuration: duration,
           };
         });
+
+      const imageTrack = editorData.find((r) => r.id === "image-track");
+      const images =
+        imageTrack?.actions
+          .map((a) => {
+            const overlay = imageOverlays[a.id];
+            if (!overlay) return null;
+            const x = Math.round(settings.width / 2 - overlay.width / 2 + overlay.centerX);
+            const y = Math.round(settings.height / 2 - overlay.height / 2 + overlay.centerY);
+            return {
+              assetId: overlay.assetId,
+              position: a.start,
+              end: a.end,
+              width: overlay.width,
+              height: overlay.height,
+              x,
+              y,
+              opacity: overlay.opacity,
+              rotation: overlay.rotation,
+            };
+          })
+          .filter((t): t is NonNullable<typeof t> => t !== null) ?? [];
 
       const textTrack = editorData.find((r) => r.id === "text-track");
       const texts = textTrack?.actions
@@ -100,6 +124,7 @@ export default function ExportDialog({
         workId,
         clips,
         texts: texts && texts.length > 0 ? texts : undefined,
+        images: images.length > 0 ? images : undefined,
         audio: hasAudio ? { volume: audioMeta.volume, audioUrl: audioUrl ?? undefined } : undefined,
         options: {
           width: settings.width,

@@ -6,7 +6,7 @@ import {
 import type { TimelineRow, TimelineAction, TimelineEffect } from "@xzdarcy/timeline-engine";
 import "@xzdarcy/react-timeline-editor/dist/react-timeline-editor.css";
 import { Play, Pause, Square, ZoomIn, ZoomOut, Music } from "lucide-react";
-import type { ClipMetaMap, TextOverlayMap, SelectedItem } from "./types";
+import type { ClipMetaMap, TextOverlayMap, ImageOverlayMap, SelectedItem } from "./types";
 
 const MIN_CLIP_DURATION = 0.5;
 const DEFAULT_SCALE_WIDTH = 160;
@@ -19,6 +19,7 @@ interface EditorTimelineProps {
   effects: Record<string, TimelineEffect>;
   clipMeta: ClipMetaMap;
   textOverlays: TextOverlayMap;
+  imageOverlays?: ImageOverlayMap;
   audioFile: File | null;
   onChange: (data: TimelineRow[]) => void;
   selectedItem: SelectedItem;
@@ -33,9 +34,10 @@ function formatTime(seconds: number): string {
   return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
 }
 
-function getTrackType(rowId: string): "clip" | "text" | "audio" | null {
+function getTrackType(rowId: string): "clip" | "text" | "image" | "audio" | null {
   if (rowId === "video-track") return "clip";
   if (rowId === "text-track") return "text";
+  if (rowId === "image-track") return "image";
   if (rowId === "audio-track") return "audio";
   return null;
 }
@@ -43,6 +45,7 @@ function getTrackType(rowId: string): "clip" | "text" | "audio" | null {
 const ROW_LABELS: Record<string, string> = {
   "video-track": "Video",
   "text-track": "Text",
+  "image-track": "Image",
   "audio-track": "Audio",
 };
 
@@ -51,6 +54,7 @@ export default function EditorTimeline({
   effects,
   clipMeta,
   textOverlays,
+  imageOverlays = {},
   audioFile,
   onChange,
   selectedItem,
@@ -270,6 +274,26 @@ export default function EditorTimeline({
         );
       }
 
+      if (trackType === "image") {
+        const overlay = imageOverlays[action.id];
+        return (
+          <div
+            className="h-full flex items-center gap-1 px-2 overflow-hidden select-none"
+            style={{
+              background: isSelected
+                ? "rgba(245, 158, 11, 0.5)"
+                : "rgba(217, 119, 6, 0.3)",
+              borderRadius: 4,
+              border: isSelected ? "1px solid #f59e0b" : "1px solid transparent",
+            }}
+          >
+            <span className="text-[10px] text-white truncate">
+              {overlay ? "Image" : "—"}
+            </span>
+          </div>
+        );
+      }
+
       if (trackType === "audio") {
         return (
           <div
@@ -292,7 +316,7 @@ export default function EditorTimeline({
 
       return null;
     },
-    [clipMeta, textOverlays, audioFile, selectedItem],
+    [clipMeta, textOverlays, imageOverlays, audioFile, selectedItem],
   );
 
   const getScaleRender = useCallback((scale: number) => {

@@ -1,4 +1,4 @@
-import type { Project, ProjectMeta, WorkSnapshot, WorkMeta } from "@viragen/shared";
+import type { Project, ProjectMeta, WorkSnapshot, WorkMeta, ProjectAsset, ProjectAssetList } from "@viragen/shared";
 import { getAuthToken } from "../store/useAuthStore";
 
 const API = "/api/projects";
@@ -57,6 +57,65 @@ export async function createProject(name: string): Promise<Project> {
 export async function deleteProject(id: string): Promise<void> {
   const res = await fetch(`${API}/${id}`, { method: "DELETE", headers: getAuthHeader() });
   if (!res.ok && res.status !== 404) throw new Error("Failed to delete project");
+}
+
+// --- Project Assets ---
+
+export async function listProjectAssets(
+  projectId: string,
+  type?: "image" | "video" | "audio" | "font"
+): Promise<ProjectAssetList> {
+  const q = type ? `?type=${type}` : "";
+  const res = await fetch(`${API}/${projectId}/assets${q}`, { headers: getAuthHeader() });
+  if (!res.ok) throw new Error("Failed to list assets");
+  return res.json();
+}
+
+export function getProjectAssetUrl(projectId: string, assetId: string): string {
+  return `${API}/${projectId}/assets/${assetId}`;
+}
+
+export async function uploadProjectAsset(
+  projectId: string,
+  file: File,
+  options?: { name?: string; tags?: string[] }
+): Promise<ProjectAsset> {
+  const form = new FormData();
+  form.append("file", file);
+  if (options?.name) form.append("name", options.name);
+  if (options?.tags?.length) form.append("tags", JSON.stringify(options.tags));
+  const res = await fetch(`${API}/${projectId}/assets`, {
+    method: "POST",
+    headers: getAuthHeader(),
+    body: form,
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: "Upload failed" }));
+    throw new Error((err as { error?: string }).error || "Failed to upload asset");
+  }
+  return res.json();
+}
+
+export async function deleteProjectAsset(projectId: string, assetId: string): Promise<void> {
+  const res = await fetch(`${API}/${projectId}/assets/${assetId}`, {
+    method: "DELETE",
+    headers: getAuthHeader(),
+  });
+  if (!res.ok && res.status !== 404) throw new Error("Failed to delete asset");
+}
+
+export async function updateProjectAssetMeta(
+  projectId: string,
+  assetId: string,
+  updates: { name?: string; tags?: string[] }
+): Promise<ProjectAsset> {
+  const res = await fetch(`${API}/${projectId}/assets/${assetId}`, {
+    method: "PUT",
+    headers: { ...getAuthHeader(), "Content-Type": "application/json" },
+    body: JSON.stringify(updates),
+  });
+  if (!res.ok) throw new Error("Failed to update asset");
+  return res.json();
 }
 
 // --- Works ---

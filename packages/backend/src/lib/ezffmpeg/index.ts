@@ -16,10 +16,12 @@ import type {
   ClipObj,
   VideoClipObj,
   AudioClipObj,
+  ImageClipObj,
   ExportParams,
   InternalVideoClip,
   InternalAudioClip,
   InternalTextClip,
+  InternalImageClip,
   InternalClip,
   VideoMetadata,
   Logger,
@@ -44,6 +46,7 @@ export class EZFFMPEG {
   private options: ResolvedOptions;
   private videoOrAudioClips: InternalClip[] = [];
   private textClips: InternalTextClip[] = [];
+  private imageClips: InternalImageClip[] = [];
   private filesToClean: string[] = [];
   private log: Logger;
 
@@ -159,6 +162,10 @@ export class EZFFMPEG {
     this.textClips.push(clip);
   }
 
+  private loadImage(clipObj: ImageClipObj): void {
+    this.imageClips.push({ ...clipObj });
+  }
+
   async load(clipObjs: ClipObj[]): Promise<void> {
     await Promise.all(
       clipObjs.map((clipObj) => {
@@ -169,6 +176,10 @@ export class EZFFMPEG {
         }
         if (clipObj.type === "text") {
           this.loadText(clipObj);
+          return;
+        }
+        if (clipObj.type === "image") {
+          this.loadImage(clipObj);
           return;
         }
       }),
@@ -348,6 +359,29 @@ export class EZFFMPEG {
       filterComplex += `amix=inputs=${audioConcatInputs.length}:duration=longest[outa];`;
     }
 
+    // 5b. Image overlays (after video concat, before text)
+    const numVideoAudio = this.videoOrAudioClips.length;
+    if (this.imageClips.length > 0) {
+      let prevLabel = combinedVideoName;
+      this.imageClips.forEach((img, idx) => {
+        const inputIndex = numVideoAudio + idx;
+        const enable = `between(t\\,${img.position}\\,${img.end})`;
+        const isLast = idx === this.imageClips.length - 1;
+        const outName = isLast && this.textClips.length === 0 ? "outVideoAndImage" : `img${idx}`;
+        let imgLabel = `[${inputIndex}:v]`;
+        if (img.opacity != null && img.opacity < 1) {
+          filterComplex += `[${inputIndex}:v]format=rgba,colorchannelmixer=aa=${img.opacity}[img${idx}a];`;
+          imgLabel = `[img${idx}a]`;
+        }
+        filterComplex += `${prevLabel}${imgLabel}overlay=x=${img.x}:y=${img.y}:enable='${enable}'[${outName}];`;
+        prevLabel = `[${outName}]`;
+      });
+      combinedVideoName =
+        this.textClips.length > 0 || this.imageClips.length > 1
+          ? `[img${this.imageClips.length - 1}]`
+          : "[outVideoAndImage]";
+    }
+
     // 6. Text overlays
     if (this.textClips.length > 0) {
       textString += `${combinedVideoName}`;
@@ -404,9 +438,12 @@ export class EZFFMPEG {
     // 7. Build final ffmpeg command args
     const args: string[] = ["-y"];
 
-    // Add input files
+    // Add input files: video/audio first, then image overlays
     for (const clip of this.videoOrAudioClips) {
       args.push("-i", clip.url);
+    }
+    for (const img of this.imageClips) {
+      args.push("-i", img.url);
     }
 
     args.push("-filter_complex", filterComplex);

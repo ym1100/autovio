@@ -36,6 +36,7 @@ ViraGen is a full-stack AI-powered video generation platform. It enables users t
 - **Project assets**: Upload and manage project-level assets (images, video, audio, fonts) in Project settings; reuse across all works (e.g. logos, watermarks).
 - Edit and arrange clips in a timeline editor with **video transitions** (cut, fade, dissolve, wipe, slide) and per-clip transition duration.
 - **Image/logo overlays**: Add image assets from the project library to the timeline; position, size, opacity, and rotation in the editor; rendered in export.
+- **Editor templates**: Save current overlay layout (text + image overlays, optional export settings) as a project-level template; list, apply, update, and delete templates; apply with relative or absolute timing and optional placeholders (e.g. `{{product_name}}`). Templates are stored in MongoDB.
 - Export final videos with text overlays, image overlays, transitions, and audio.
 
 ### Key Use Cases
@@ -124,6 +125,7 @@ The system integrates with multiple AI providers (Google Gemini, Anthropic Claud
 │   │   │   │       ├── User.ts
 │   │   │   │       ├── Project.ts
 │   │   │   │       ├── Work.ts
+│   │   │   │       ├── EditorTemplate.ts
 │   │   │   │       └── APIToken.ts
 │   │   │   ├── lib/                # Utility libraries
 │   │   │   │   └── ezffmpeg/       # FFmpeg wrapper for video export
@@ -153,6 +155,7 @@ The system integrates with multiple AI providers (Google Gemini, Anthropic Claud
 │   │   │   │   ├── tokens.ts       # API token management
 │   │   │   │   ├── projects.ts     # Project CRUD
 │   │   │   │   ├── assets.ts       # Project assets CRUD (upload, list, get, delete)
+│   │   │   │   ├── templates.ts    # Editor templates API (list, create, get, update, delete, apply)
 │   │   │   │   ├── works.ts        # Work CRUD and media
 │   │   │   │   ├── analyze.ts      # Video analysis
 │   │   │   │   ├── scenario.ts     # Scenario generation
@@ -161,10 +164,11 @@ The system integrates with multiple AI providers (Google Gemini, Anthropic Claud
 │   │   │   │   ├── export.ts       # Final video export
 │   │   │   │   └── providers.ts    # Provider listing
 │   │   │   ├── storage/            # File storage logic
-│   │   │   │   ├── path.ts         # Path helpers (projectDir, workDir, assetsDir, assetFilePath)
+│   │   │   │   ├── path.ts         # Path helpers (projectDir, workDir, assetsDir, templatesDir, etc.)
 │   │   │   │   ├── projects.ts     # Project CRUD
 │   │   │   │   ├── works.ts        # Work and scene media
-│   │   │   │   └── assets.ts       # Project asset storage (list, get, upload, delete)
+│   │   │   │   ├── assets.ts       # Project asset storage (list, get, upload, delete)
+│   │   │   │   └── templates.ts    # Editor template storage (MongoDB)
 │   │   │   └── index.ts            # Server entry point
 │   │   ├── data/                   # Binary file storage (videos, images)
 │   │   └── uploads/                # Temporary upload storage
@@ -175,7 +179,7 @@ The system integrates with multiple AI providers (Google Gemini, Anthropic Claud
 │   │   │   │   └── client.ts       # Axios-based API wrapper
 │   │   │   ├── components/         # React components
 │   │   │   │   ├── auth/           # Login, Register pages
-│   │   │   │   ├── editor/         # Video editor (timeline, preview, properties, export, AssetPickerDialog)
+│   │   │   │   ├── editor/         # Video editor (timeline, preview, properties, export, AssetPickerDialog, TemplatesPanel, SaveTemplateDialog, ApplyTemplateDialog, TemplateCard)
 │   │   │   │   ├── project/        # Project-level UI
 │   │   │   │   │   ├── ProjectAssetsPanel.tsx   # Asset list, filter, upload, preview, delete
 │   │   │   │   │   ├── AssetUploadDialog.tsx    # Upload asset modal
@@ -189,6 +193,7 @@ The system integrates with multiple AI providers (Google Gemini, Anthropic Claud
 │   │   │   │   │   └── EditorStep.tsx
 │   │   │   │   └── ui/             # Shared UI components (incl. StyleGuideForm.tsx)
 │   │   │   ├── hooks/              # Custom React hooks
+│   │   │   ├── utils/              # Utilities (e.g. templateUtils: extractTemplateFromEditorState, findPlaceholders)
 │   │   │   ├── storage/            # Project storage API wrapper
 │   │   │   ├── store/              # Zustand state stores
 │   │   │   │   ├── useStore.ts     # Main application state
@@ -205,7 +210,7 @@ The system integrates with multiple AI providers (Google Gemini, Anthropic Claud
 │           │   ├── analysis.ts     # AnalysisResult, SceneAnalysis
 │           │   ├── scenario.ts     # UserIntent, ScenarioScene
 │           │   ├── style-guide.ts  # StyleGuide, styleGuideFromAnalysis, isStyleGuideEmpty
-│           │   ├── project.ts      # Project, WorkSnapshot, ProjectAsset, ProjectAssetList, EditorStateSnapshot (imageTrack, imageOverlays), ImageOverlaySnapshot, TimelineActionSnapshot (transitionType, transitionDuration)
+│           │   ├── project.ts      # Project, WorkSnapshot, ProjectAsset, EditorTemplate, EditorTemplateContent, TemplateTextOverlay, TemplateImageOverlay, EditorStateSnapshot, ImageOverlaySnapshot, TimelineActionSnapshot
 │           │   ├── provider.ts     # ProviderConfig, ProviderInfo
 │           │   ├── video.ts        # VideoClip, ExportRequest, ExportRequestImage
 │           │   ├── user.ts         # User, AuthResponse
@@ -400,11 +405,12 @@ ViraGen implements a 5-step video generation workflow. Each step builds upon the
 - **Video transitions**: Per-clip "transition to next" (cut, fade, dissolve, wipeleft, wiperight, slideup, slidedown) and duration; editable in Properties panel when a video clip is selected (except last clip).
 - Add **text overlays** with timing and styling
 - Add **image overlays** from project assets ("+ Image" → AssetPickerDialog); image track with position/size/opacity/rotation in Properties panel; preview and export render images from project asset URLs.
+- **Editor templates**: Open "Templates" panel to list project templates; "Save current as template" to store current text/image overlays (and optional export settings) with relative timing; "Apply" to add a template’s overlays to the current timeline (timing scaled by video duration; optional placeholders e.g. `{{product_name}}`). Apply merges into existing overlays and can set export settings.
 - Preview assembled video in export resolution (video, text, and image overlays)
 - Export final MP4 with transitions, text overlays, image overlays, and audio
 
 **Data Flow**:
-- Frontend: `EditorStep.tsx`, `EditorTimeline.tsx`, `VideoPreview.tsx`, `PropertiesPanel.tsx`, `ExportDialog.tsx`, `AssetPickerDialog.tsx`
+- Frontend: `EditorStep.tsx`, `EditorTimeline.tsx`, `VideoPreview.tsx`, `PropertiesPanel.tsx`, `ExportDialog.tsx`, `AssetPickerDialog.tsx`, `TemplatesPanel.tsx`, `SaveTemplateDialog.tsx`, `ApplyTemplateDialog.tsx`, `TemplateCard.tsx`
 - Project assets UI (outside editor): `WorksList` → Project settings accordion → **Project assets** section (`ProjectAssetsPanel`, `AssetUploadDialog`, `AssetPreviewModal`) for upload/list/preview/delete.
 - API: `GET/POST /api/projects/:projectId/assets`, `POST /api/export`
 - Backend: `storage/assets.ts` for asset CRUD; EZFFMPEG processes video clips, image overlays, text overlays, and transitions into final video.
@@ -581,7 +587,7 @@ All endpoints are prefixed with `/api`. Authentication uses JWT Bearer tokens un
 
 ### 6.5.1 Project Assets (`/api/projects/:projectId/assets`)
 
-Project-level asset storage (images, video, audio, fonts) for use across works (e.g. logos, watermarks). Stored under `data/projects/:projectId/assets/` with metadata in `assets.json`. Asset GET accepts optional `?token=` query for `<img>` src auth.
+Project-level asset storage (images, video, audio, fonts) for use across works (e.g. logos, watermarks). **Metadata** is stored in MongoDB (Asset collection); **binary files** remain on disk under `data/projects/:projectId/assets/`. Asset GET accepts optional `?token=` query for `<img>` src auth.
 
 | Method | Endpoint | Auth | Scope | Description |
 |--------|----------|------|-------|-------------|
@@ -595,6 +601,34 @@ Project-level asset storage (images, video, audio, fonts) for use across works (
 **ProjectAsset** (shared type): id, name, type (`image`|`video`|`audio`|`font`), filename, mimeType, size, width?, height?, duration?, createdAt, updatedAt, tags?, thumbnail?.
 
 **List response**: `{ assets: ProjectAsset[], totalSize: number, count: number }` (each asset may include `url` for the file endpoint).
+
+---
+
+### 6.5.2 Editor Templates (`/api/projects/:projectId/templates`)
+
+Project-level editor templates: reusable overlay compositions (text + image overlays, optional export settings) stored in MongoDB. Usable in all works of the project.
+
+| Method | Endpoint | Auth | Scope | Description |
+|--------|----------|------|-------|-------------|
+| GET | `/api/projects/:projectId/templates` | Yes | projects:read | List templates (meta only) |
+| POST | `/api/projects/:projectId/templates` | Yes | projects:write | Create template |
+| GET | `/api/projects/:projectId/templates/:templateId` | Yes | projects:read | Get full template |
+| PUT | `/api/projects/:projectId/templates/:templateId` | Yes | projects:write | Update template |
+| DELETE | `/api/projects/:projectId/templates/:templateId` | Yes | projects:write | Delete template |
+| POST | `/api/projects/:projectId/templates/:templateId/apply` | Yes | projects:read | Apply template to current work |
+
+**Create (POST)**  
+- Request body: `{ name: string, description?: string, tags?: string[], content: EditorTemplateContent }`  
+- `content`: `textOverlays` (TemplateTextOverlay[]), `imageOverlays` (TemplateImageOverlay[]), optional `defaultTransition`, `exportSettings`  
+- Response: full `EditorTemplate` with generated `id`
+
+**List (GET)**  
+- Response: `{ templates: EditorTemplateMeta[], count: number }` (id, name, description, thumbnail, createdAt, updatedAt, tags, textOverlayCount, imageOverlayCount, hasExportSettings)
+
+**Apply (POST)**  
+- Request body: `{ templateId: string, videoDuration: number, placeholderValues?: Record<string, string> }`  
+- Backend resolves relative/absolute timing from template to seconds using `videoDuration`; replaces placeholders in text (e.g. `{{product_name}}`); validates image overlay assetIds exist in project.  
+- Response: `{ textOverlays, textTrackActions, imageOverlays, imageTrackActions, exportSettings?, missingAssetIds? }` — frontend merges these into editor state.
 
 ---
 
@@ -833,17 +867,76 @@ This is the most complex model, containing nested subdocuments for analysis and 
 
 **Indexes**: `{ projectId: 1 }`, `{ projectId: 1, updatedAt: -1 }`
 
-**Project assets storage (filesystem)**: Project-level assets are stored under `data/projects/:projectId/assets/` (see §6.5.1). Metadata is kept in `assets.json`; asset files use unique filenames. Not stored in MongoDB.
+**Project assets**: Metadata is stored in MongoDB (Asset model, see §7.5). Binary files are on disk under `data/projects/:projectId/assets/` (see §6.5.1). When a project is deleted, Work and Asset documents for that project are removed; the project directory (including assets folder) is deleted from disk.
 
 ---
 
-### 7.5 Entity Relationships
+### 7.5 Asset Model
+
+**Collection**: `assets`
+
+Project-level asset metadata. Binary files are stored on disk under `data/projects/:projectId/assets/` (see path.ts: `assetsDir`, `assetFilePath`).
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| _id | String | Yes | Custom string ID (e.g. `asset_xxx`) |
+| projectId | String | Yes | Reference to Project._id |
+| name | String | Yes | Display name |
+| type | String | Yes | `image` \| `video` \| `audio` \| `font` |
+| filename | String | Yes | Filename on disk (under project assets dir) |
+| mimeType | String | Yes | MIME type |
+| size | Number | Yes | File size in bytes |
+| width | Number | No | Image/video width (optional) |
+| height | Number | No | Image/video height (optional) |
+| duration | Number | No | Video/audio duration (optional) |
+| createdAt | Number | Yes | Creation timestamp |
+| updatedAt | Number | Yes | Update timestamp |
+| tags | String[] | No | Optional tags |
+| thumbnail | String | No | Optional thumbnail ref |
+
+**Indexes**: `{ projectId: 1 }`, `{ projectId: 1, type: 1 }`, `{ projectId: 1, updatedAt: -1 }`
+
+---
+
+### 7.6 EditorTemplate Model
+
+**Collection**: `editortemplates`
+
+Editor templates are stored in MongoDB (not filesystem). Each document is one reusable overlay composition for a project.
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| _id | String | Yes | Custom string ID (e.g. `tmpl_xxx`) |
+| projectId | String | Yes | Reference to Project._id |
+| name | String | Yes | Template name |
+| description | String | No | Optional description |
+| thumbnail | String | No | Optional thumbnail URL/path |
+| createdAt | Number | Yes | Creation timestamp |
+| updatedAt | Number | Yes | Last update timestamp |
+| content | Object | Yes | EditorTemplateContent (nested) |
+| tags | String[] | No | Optional tags |
+
+**Nested: content (EditorTemplateContent)**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| textOverlays | Array | TemplateTextOverlay[] (id, text, fontSize, fontColor, centerX, centerY, timingMode, startPercent/endPercent or startSeconds/endSeconds) |
+| imageOverlays | Array | TemplateImageOverlay[] (id, assetId, width, height, centerX, centerY, opacity, rotation, maintainAspectRatio, timingMode, timing fields) |
+| defaultTransition | Object | Optional { type, duration } |
+| exportSettings | Object | Optional { width, height, fps } |
+
+**Indexes**: `{ projectId: 1, updatedAt: -1 }`
+
+---
+
+### 7.7 Entity Relationships
 
 ```
 User (1) ──────> (N) APIToken
   │
   └──── (1) ──> (N) Project
                       │
+                      ├── (1) ──> (N) Asset   (metadata in MongoDB; binaries on disk)
                       └── (1) ──> (N) Work
                                       │
                                       ├── analysis (embedded)
@@ -1079,6 +1172,7 @@ These are read by `api/client.ts` and sent as headers with each AI-related reque
 | User model | packages/backend/src/db/models/User.ts |
 | Project model | packages/backend/src/db/models/Project.ts |
 | Work model | packages/backend/src/db/models/Work.ts |
+| Asset model | packages/backend/src/db/models/Asset.ts |
 | Main store | packages/frontend/src/store/useStore.ts |
 | Auth store | packages/frontend/src/store/useAuthStore.ts |
 | API client | packages/frontend/src/api/client.ts |
@@ -1093,11 +1187,18 @@ These are read by `api/client.ts` and sent as headers with each AI-related reque
 | Project assets API (frontend) | packages/frontend/src/storage/projectStorage.ts (listProjectAssets, uploadProjectAsset, getProjectAssetUrl, deleteProjectAsset) |
 | Project assets panel / upload / preview | packages/frontend/src/components/project/ProjectAssetsPanel.tsx, AssetUploadDialog.tsx, AssetPreviewModal.tsx |
 | Editor asset picker (select image for overlay) | packages/frontend/src/components/editor/AssetPickerDialog.tsx |
+| Editor templates panel / dialogs | packages/frontend/src/components/editor/TemplatesPanel.tsx, SaveTemplateDialog.tsx, ApplyTemplateDialog.tsx, TemplateCard.tsx |
+| Template utils (extract, placeholders) | packages/frontend/src/utils/templateUtils.ts |
 | Asset routes (backend) | packages/backend/src/routes/assets.ts |
-| Asset storage (backend) | packages/backend/src/storage/assets.ts, path.ts (assetsDir, assetFilePath, assetsJsonPath) |
+| Asset storage (backend) | packages/backend/src/storage/assets.ts, path.ts (assetsDir, assetFilePath); metadata in MongoDB (Asset model) |
 | EZFFMPEG (video/audio/text/image, xfade) | packages/backend/src/lib/ezffmpeg/index.ts, types.ts |
 | Export request with images | packages/backend/src/routes/export.ts (resolves asset paths, passes image clips to EZFFMPEG) |
-| Shared export/image types | packages/shared/src/types/project.ts (ProjectAsset, ImageOverlaySnapshot), video.ts (ExportRequestImage) |
+| Shared export/image/types (incl. EditorTemplate) | packages/shared/src/types/project.ts (ProjectAsset, EditorTemplate, TemplateTextOverlay, TemplateImageOverlay, ImageOverlaySnapshot), video.ts (ExportRequestImage) |
+
+---
+
+*This documentation was generated for LLM context understanding. Last updated: March 2026.*
+hared/src/types/project.ts (ProjectAsset, ImageOverlaySnapshot), video.ts (ExportRequestImage) |
 
 ---
 

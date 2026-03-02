@@ -1,4 +1,17 @@
-import type { Project, ProjectMeta, WorkSnapshot, WorkMeta, ProjectAsset, ProjectAssetList } from "@viragen/shared";
+import type {
+  Project,
+  ProjectMeta,
+  WorkSnapshot,
+  WorkMeta,
+  ProjectAsset,
+  ProjectAssetList,
+  EditorTemplate,
+  EditorTemplateMeta,
+  EditorTemplateList,
+  EditorTemplateContent,
+  TemplateApplicationRequest,
+  TemplateApplicationResult,
+} from "@viragen/shared";
 import { getAuthToken } from "../store/useAuthStore";
 
 const API = "/api/projects";
@@ -115,6 +128,86 @@ export async function updateProjectAssetMeta(
     body: JSON.stringify(updates),
   });
   if (!res.ok) throw new Error("Failed to update asset");
+  return res.json();
+}
+
+// --- Editor Templates ---
+
+const TEMPLATES_API = (projectId: string) => `${API}/${projectId}/templates`;
+
+export async function listTemplates(projectId: string): Promise<EditorTemplateList> {
+  const res = await fetch(TEMPLATES_API(projectId), { headers: getAuthHeader() });
+  if (!res.ok) throw new Error("Failed to list templates");
+  return res.json();
+}
+
+export async function getTemplate(
+  projectId: string,
+  templateId: string
+): Promise<EditorTemplate | null> {
+  const res = await fetch(`${TEMPLATES_API(projectId)}/${templateId}`, {
+    headers: getAuthHeader(),
+  });
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error("Failed to get template");
+  return res.json();
+}
+
+export async function createTemplate(
+  projectId: string,
+  data: { name: string; description?: string; tags?: string[]; content: EditorTemplateContent }
+): Promise<EditorTemplate> {
+  const res = await fetch(TEMPLATES_API(projectId), {
+    method: "POST",
+    headers: { ...getAuthHeader(), "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: "Failed to create template" }));
+    throw new Error((err as { error?: string }).error || "Failed to create template");
+  }
+  return res.json();
+}
+
+export async function updateTemplate(
+  projectId: string,
+  templateId: string,
+  data: { name?: string; description?: string; tags?: string[]; content?: EditorTemplateContent }
+): Promise<EditorTemplate> {
+  const res = await fetch(`${TEMPLATES_API(projectId)}/${templateId}`, {
+    method: "PUT",
+    headers: { ...getAuthHeader(), "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) throw new Error("Failed to update template");
+  return res.json();
+}
+
+export async function deleteTemplate(
+  projectId: string,
+  templateId: string
+): Promise<void> {
+  const res = await fetch(`${TEMPLATES_API(projectId)}/${templateId}`, {
+    method: "DELETE",
+    headers: getAuthHeader(),
+  });
+  if (!res.ok && res.status !== 404) throw new Error("Failed to delete template");
+}
+
+export async function applyTemplate(
+  projectId: string,
+  templateId: string,
+  request: TemplateApplicationRequest
+): Promise<TemplateApplicationResult & { missingAssetIds?: string[] }> {
+  const res = await fetch(`${TEMPLATES_API(projectId)}/${templateId}/apply`, {
+    method: "POST",
+    headers: { ...getAuthHeader(), "Content-Type": "application/json" },
+    body: JSON.stringify(request),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: "Apply failed" }));
+    throw new Error((err as { error?: string }).error || "Failed to apply template");
+  }
   return res.json();
 }
 

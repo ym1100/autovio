@@ -3,9 +3,8 @@ import path from "path";
 import { randomUUID } from "crypto";
 import type { ProjectAsset, ProjectAssetList } from "@viragen/shared";
 import { projectExists } from "./projects.js";
-import { assetsDir, assetsJsonPath, assetFilePath } from "./path.js";
-
-const ASSETS_JSON = "assets.json";
+import { assetsDir, assetFilePath } from "./path.js";
+import { AssetModel, toProjectAsset } from "../db/index.js";
 
 const MIME_TO_TYPE: Record<string, ProjectAsset["type"]> = {
   "image/png": "image",
@@ -34,27 +33,6 @@ async function ensureAssetsDir(projectId: string): Promise<string> {
   return dir;
 }
 
-async function readAssetsMeta(projectId: string): Promise<ProjectAsset[]> {
-  const filePath = assetsJsonPath(projectId);
-  try {
-    const data = await fs.readFile(filePath, "utf-8");
-    const parsed = JSON.parse(data) as { assets?: ProjectAsset[] };
-    return Array.isArray(parsed.assets) ? parsed.assets : [];
-  } catch {
-    return [];
-  }
-}
-
-async function writeAssetsMeta(projectId: string, assets: ProjectAsset[]): Promise<void> {
-  await ensureAssetsDir(projectId);
-  const filePath = assetsJsonPath(projectId);
-  await fs.writeFile(
-    filePath,
-    JSON.stringify({ assets }, null, 2),
-    "utf-8"
-  );
-}
-
 function inferType(mimeType: string): ProjectAsset["type"] {
   const lower = mimeType.toLowerCase();
   if (MIME_TO_TYPE[lower]) return MIME_TO_TYPE[lower];
@@ -75,13 +53,15 @@ export async function listAssets(
   projectId: string,
   filterType?: ProjectAsset["type"]
 ): Promise<ProjectAssetList> {
-  const assets = await readAssetsMeta(projectId);
-  const filtered = filterType ? assets.filter((a) => a.type === filterType) : assets;
-  const totalSize = filtered.reduce((sum, a) => sum + a.size, 0);
+  const query: { projectId: string; type?: ProjectAsset["type"] } = { projectId };
+  if (filterType) query.type = filterType;
+  const docs = await AssetModel.find(query).sort({ updatedAt: -1 }).lean();
+  const assets = docs.map(toProjectAsset);
+  const totalSize = assets.reduce((sum, a) => sum + a.size, 0);
   return {
-    assets: filtered,
+    assets,
     totalSize,
-    count: filtered.length,
+    count: assets.length,
   };
 }
 
@@ -91,8 +71,8 @@ export async function getAsset(
   userId?: string
 ): Promise<ProjectAsset | null> {
   if (userId && !(await projectExists(projectId, userId))) return null;
-  const assets = await readAssetsMeta(projectId);
-  return assets.find((a) => a.id === assetId) ?? null;
+  const doc = await AssetModel.findOne({ _id: assetId, projectId }).lean();
+  return doc ? toProjectAsset(doc) : null;
 }
 
 export async function getAssetFilePath(
@@ -101,8 +81,7 @@ export async function getAssetFilePath(
 ): Promise<string | null> {
   const asset = await getAsset(projectId, assetId);
   if (!asset) return null;
-  const dir = assetsDir(projectId);
-  const fullPath = path.resolve(dir, asset.filename);
+  const fullPath = assetFilePath(projectId, asset.filename);
   try {
     await fs.access(fullPath);
     return fullPath;
@@ -134,15 +113,15 @@ export async function uploadAsset(input: UploadAssetInput): Promise<ProjectAsset
   }
 
   const id = "asset_" + randomUUID().replace(/-/g, "").slice(0, 12);
-  const ext = path.extname(file.originalname) || (file.mimetype === "image/jpeg" ? ".jpg" : ".bin");
   const filename = `${id}_${safeFilename(file.originalname)}`;
   const dir = await ensureAssetsDir(projectId);
   const filePath = path.join(dir, filename);
   await fs.writeFile(filePath, file.buffer);
 
   const now = Date.now();
-  const asset: ProjectAsset = {
-    id,
+  await AssetModel.create({
+    _id: id,
+    projectId,
     name: (name || file.originalname || "Asset").trim().slice(0, 200),
     type: assetType,
     filename,
@@ -151,12 +130,11 @@ export async function uploadAsset(input: UploadAssetInput): Promise<ProjectAsset
     createdAt: now,
     updatedAt: now,
     tags: tags && tags.length > 0 ? tags : undefined,
-  };
+  });
 
-  const assets = await readAssetsMeta(projectId);
-  assets.push(asset);
-  await writeAssetsMeta(projectId, assets);
-  return asset;
+  const doc = await AssetModel.findById(id).lean();
+  if (!doc) throw new Error("Asset create failed");
+  return toProjectAsset(doc);
 }
 
 export async function deleteAsset(
@@ -165,17 +143,14 @@ export async function deleteAsset(
   userId?: string
 ): Promise<boolean> {
   if (userId && !(await projectExists(projectId, userId))) return false;
-  const assets = await readAssetsMeta(projectId);
-  const index = assets.findIndex((a) => a.id === assetId);
-  if (index === -1) return false;
-  const [removed] = assets.splice(index, 1);
-  const fullPath = path.join(assetsDir(projectId), removed.filename);
+  const doc = await AssetModel.findOneAndDelete({ _id: assetId, projectId });
+  if (!doc) return false;
+  const fullPath = assetFilePath(projectId, doc.filename);
   try {
     await fs.unlink(fullPath);
   } catch {
     // ignore if already missing
   }
-  await writeAssetsMeta(projectId, assets);
   return true;
 }
 
@@ -186,12 +161,14 @@ export async function updateAssetMeta(
   userId?: string
 ): Promise<ProjectAsset | null> {
   if (userId && !(await projectExists(projectId, userId))) return null;
-  const assets = await readAssetsMeta(projectId);
-  const asset = assets.find((a) => a.id === assetId);
-  if (!asset) return null;
-  if (updates.name !== undefined) asset.name = updates.name.trim().slice(0, 200);
-  if (updates.tags !== undefined) asset.tags = updates.tags.length > 0 ? updates.tags : undefined;
-  asset.updatedAt = Date.now();
-  await writeAssetsMeta(projectId, assets);
-  return asset;
+  const doc = await AssetModel.findOneAndUpdate(
+    { _id: assetId, projectId },
+    {
+      ...(updates.name !== undefined && { name: updates.name.trim().slice(0, 200) }),
+      ...(updates.tags !== undefined && { tags: updates.tags.length > 0 ? updates.tags : [] }),
+      updatedAt: Date.now(),
+    },
+    { new: true }
+  ).lean();
+  return doc ? toProjectAsset(doc) : null;
 }

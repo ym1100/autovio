@@ -5,7 +5,7 @@ import {
   DEFAULT_IMAGE_INSTRUCTION,
   DEFAULT_VIDEO_INSTRUCTION,
 } from "@viragen/shared";
-import { ProjectModel, toProject, WorkModel } from "../db/index.js";
+import { ProjectModel, toProject, WorkModel, AssetModel } from "../db/index.js";
 import { projectDir } from "./path.js";
 
 async function ensureDir(dir: string): Promise<void> {
@@ -87,6 +87,7 @@ export async function deleteProject(id: string, userId?: string): Promise<boolea
     // ignore if not exists
   }
   await WorkModel.deleteMany({ projectId: id });
+  await AssetModel.deleteMany({ projectId: id });
   return true;
 }
 

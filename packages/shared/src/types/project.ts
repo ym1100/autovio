@@ -137,6 +137,95 @@ export interface ProjectAssetList {
   count: number;
 }
 
+// --- Editor Templates ---
+
+/** Editor template - reusable overlay composition. Stored at project level. */
+export interface EditorTemplate {
+  id: string;
+  projectId: string;
+  name: string;
+  description?: string;
+  thumbnail?: string;
+  createdAt: number;
+  updatedAt: number;
+  content: EditorTemplateContent;
+  tags?: string[];
+}
+
+export interface EditorTemplateContent {
+  textOverlays: TemplateTextOverlay[];
+  imageOverlays: TemplateImageOverlay[];
+  defaultTransition?: { type: string; duration: number };
+  exportSettings?: { width: number; height: number; fps: number };
+}
+
+export interface TemplateTextOverlay {
+  id: string;
+  text: string;
+  fontSize: number;
+  fontColor: string;
+  centerX: number;
+  centerY: number;
+  timingMode: "relative" | "absolute";
+  startPercent?: number;
+  endPercent?: number;
+  startSeconds?: number;
+  endSeconds?: number;
+}
+
+export interface TemplateImageOverlay {
+  id: string;
+  assetId: string;
+  width: number;
+  height: number;
+  centerX: number;
+  centerY: number;
+  opacity: number;
+  rotation: number;
+  maintainAspectRatio: boolean;
+  timingMode: "relative" | "absolute";
+  startPercent?: number;
+  endPercent?: number;
+  startSeconds?: number;
+  endSeconds?: number;
+}
+
+/** Request to apply a template to a work. */
+export interface TemplateApplicationRequest {
+  templateId: string;
+  videoDuration: number;
+  placeholderValues?: Record<string, string>;
+}
+
+/** Result of applying a template (text/image overlays + track actions). */
+export interface TemplateApplicationResult {
+  textOverlays: Record<string, TextOverlaySnapshot>;
+  textTrackActions: TimelineActionSnapshot[];
+  imageOverlays: Record<string, ImageOverlaySnapshot>;
+  imageTrackActions: TimelineActionSnapshot[];
+  pendingPlaceholders?: string[];
+  exportSettings?: { width: number; height: number; fps: number };
+}
+
+/** Template list item (meta only). */
+export interface EditorTemplateList {
+  templates: EditorTemplateMeta[];
+  count: number;
+}
+
+export interface EditorTemplateMeta {
+  id: string;
+  name: string;
+  description?: string;
+  thumbnail?: string;
+  createdAt: number;
+  updatedAt: number;
+  tags?: string[];
+  textOverlayCount: number;
+  imageOverlayCount: number;
+  hasExportSettings: boolean;
+}
+
 /** Editor'da kaydedilen timeline/overlay/audio state (sayfa yenilense bile geri yüklenir). */
 export interface TimelineActionSnapshot {
   id: string;

@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import type { AnalysisResult, ScenarioScene, ProviderConfig, StyleGuide } from "@viragen/shared";
 import { getProviderConfig, generateImage as apiGenerateImage, generateVideo as apiGenerateVideo } from "../api/client";
-import type { WorkSnapshot, EditorStateSnapshot } from "@viragen/shared";
+import type { WorkSnapshot, EditorStateSnapshot, EditorTemplateMeta } from "@viragen/shared";
 import * as projectStorage from "../storage/projectStorage";
 
 export type PipelineStep = 0 | 1 | 2 | 3 | 4;
@@ -124,6 +124,11 @@ interface AppState {
   providerConfig: ProviderConfig;
   setProviderConfig: (config: ProviderConfig) => void;
 
+  // Editor templates (project-level)
+  templates: EditorTemplateMeta[];
+  templatesLoading: boolean;
+  loadTemplates: (projectId: string) => Promise<void>;
+
   reset: () => void;
 }
 
@@ -161,6 +166,8 @@ const initialState = {
   editorState: undefined as EditorStateSnapshot | undefined,
   showSettings: false,
   providerConfig: getProviderConfig(),
+  templates: [] as EditorTemplateMeta[],
+  templatesLoading: false,
 };
 
 type PersistableState = Pick<
@@ -255,6 +262,8 @@ export const useStore = create<AppState>((set, get) => ({
       loadingProject: false,
       showSettings: get().showSettings,
       providerConfig: get().providerConfig,
+      templates: [],
+      templatesLoading: false,
     }),
 
   goToProjectWorks: (projectId) =>
@@ -265,6 +274,8 @@ export const useStore = create<AppState>((set, get) => ({
       loadingProject: false,
       showSettings: get().showSettings,
       providerConfig: get().providerConfig,
+      templates: [],
+      templatesLoading: false,
     }),
 
   setEditorState: (editorState) => set({ editorState }),
@@ -684,6 +695,18 @@ export const useStore = create<AppState>((set, get) => ({
   setProviderConfig: (providerConfig) => {
     localStorage.setItem("viragen_providers", JSON.stringify(providerConfig));
     set({ providerConfig });
+  },
+
+  loadTemplates: async (projectId) => {
+    set({ templatesLoading: true });
+    try {
+      const list = await projectStorage.listTemplates(projectId);
+      set({ templates: list.templates });
+    } catch {
+      set({ templates: [] });
+    } finally {
+      set({ templatesLoading: false });
+    }
   },
 
   reset: () => set(initialState),

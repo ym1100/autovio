@@ -18,6 +18,7 @@ import authRouter from "./routes/auth.js";
 import tokensRouter from "./routes/tokens.js";
 import styleGuideRouter from "./routes/style-guide.js";
 import assetsRouter from "./routes/assets.js";
+import templatesRouter from "./routes/templates.js";
 import { errorHandler } from "./middleware/error.js";
 import { requestLogger } from "./middleware/logger.js";
 import { connectDB } from "./db/index.js";
@@ -46,6 +47,7 @@ app.use("/api/generate", generateRouter);
 app.use("/api/providers", providersRouter);
 app.use("/api/projects", projectsRouter);
 app.use("/api/projects/:projectId/assets", assetsRouter);
+app.use("/api/projects/:projectId/templates", templatesRouter);
 app.use("/api/projects/:projectId/works", worksRouter);
 app.use("/api/export", exportRouter);
 

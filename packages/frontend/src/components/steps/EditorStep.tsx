@@ -1,7 +1,11 @@
 import { useState, useMemo, useCallback, useRef, useEffect } from "react";
-import { ArrowLeft, Type, Image as ImageIcon, Music, Download, Save, Loader2 } from "lucide-react";
+import { ArrowLeft, Type, Image as ImageIcon, Music, Download, Save, Loader2, FileText } from "lucide-react";
 import { useStore, type GeneratedScene } from "../../store/useStore";
 import * as projectStorage from "../../storage/projectStorage";
+import { extractTemplateFromEditorState, hasOverlayContentToSave } from "../../utils/templateUtils";
+import TemplatesPanel from "../editor/TemplatesPanel";
+import SaveTemplateDialog, { type SaveTemplateFormData } from "../editor/SaveTemplateDialog";
+import ApplyTemplateDialog from "../editor/ApplyTemplateDialog";
 import { getAuthToken } from "../../store/useAuthStore";
 import { useToastStore } from "../../store/useToastStore";
 import { isApiMediaPath } from "../../hooks/useAuthenticatedMediaUrl";
@@ -20,7 +24,7 @@ import type {
   TransitionType,
 } from "../editor/types";
 import type { TimelineEffect } from "@xzdarcy/timeline-engine";
-import type { ScenarioScene, EditorStateSnapshot } from "@viragen/shared";
+import type { ScenarioScene, EditorStateSnapshot, EditorTemplate } from "@viragen/shared";
 import VideoPreview, { createVideoEffect } from "../editor/VideoPreview";
 import PropertiesPanel from "../editor/PropertiesPanel";
 import EditorTimeline from "../editor/EditorTimeline";
@@ -221,6 +225,9 @@ export default function EditorStep() {
     editorState: savedEditorState,
     setEditorState,
     saveEditorState,
+    templates,
+    templatesLoading,
+    loadTemplates,
   } = useStore();
   const addToast = useToastStore((s) => s.addToast);
 
@@ -259,6 +266,13 @@ export default function EditorStep() {
   const [currentTime, setCurrentTime] = useState(0);
   const [showExportDialog, setShowExportDialog] = useState(false);
   const [showAssetPicker, setShowAssetPicker] = useState(false);
+  const [showTemplatesPanel, setShowTemplatesPanel] = useState(false);
+  const [showSaveTemplateDialog, setShowSaveTemplateDialog] = useState(false);
+  const [showApplyTemplateDialog, setShowApplyTemplateDialog] = useState(false);
+  const [templateToApply, setTemplateToApply] = useState<EditorTemplate | null>(null);
+  const [deletingTemplateId, setDeletingTemplateId] = useState<string | null>(null);
+  const [isSavingTemplate, setIsSavingTemplate] = useState(false);
+  const [isApplyingTemplate, setIsApplyingTemplate] = useState(false);
   const [exportSettings, setExportSettings] = useState<ExportSettings>(initial.exportSettings);
   const [isDirty, setIsDirty] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -389,6 +403,32 @@ export default function EditorStep() {
       });
     };
   }, [currentProjectId, imageOverlays]);
+
+  const videoDuration = useMemo(() => {
+    const videoTrack = editorData.find((r) => r.id === "video-track");
+    if (!videoTrack?.actions.length) return 10;
+    return Math.max(0.1, videoTrack.actions.reduce((max, a) => Math.max(max, a.end), 0));
+  }, [editorData]);
+
+  const currentEditorSnapshotForTemplate = useMemo((): EditorStateSnapshot => ({
+    editorData: {
+      videoTrack: editorData.find((r) => r.id === "video-track")?.actions ?? [],
+      textTrack: editorData.find((r) => r.id === "text-track")?.actions ?? [],
+      imageTrack: editorData.find((r) => r.id === "image-track")?.actions ?? [],
+      audioTrack: editorData.find((r) => r.id === "audio-track")?.actions ?? [],
+    },
+    textOverlays,
+    imageOverlays,
+    audioUrl: audioUrl ?? undefined,
+    audioVolume: audioMeta.volume,
+    exportSettings,
+  }), [editorData, textOverlays, imageOverlays, audioUrl, audioMeta.volume, exportSettings]);
+
+  const canSaveCurrentAsTemplate = hasOverlayContentToSave(currentEditorSnapshotForTemplate);
+
+  useEffect(() => {
+    if (showTemplatesPanel && currentProjectId) loadTemplates(currentProjectId);
+  }, [showTemplatesPanel, currentProjectId, loadTemplates]);
 
   const displayClipMeta = useMemo(
     () => buildDisplayClipMeta(clipMeta, resolvedUrlMap),
@@ -757,6 +797,150 @@ export default function EditorStep() {
     [selectedItem],
   );
 
+  const handleOpenSaveTemplateDialog = useCallback(() => {
+    setShowSaveTemplateDialog(true);
+  }, []);
+
+  const handleSaveTemplateSubmit = useCallback(
+    async (data: SaveTemplateFormData) => {
+      if (!currentProjectId) return;
+      setIsSavingTemplate(true);
+      try {
+        const content = extractTemplateFromEditorState(currentEditorSnapshotForTemplate, {
+          includeExportSettings: true,
+          timingMode: "relative",
+          videoDuration,
+        });
+        await projectStorage.createTemplate(currentProjectId, {
+          name: data.name,
+          description: data.description || undefined,
+          tags: data.tags ? data.tags.split(",").map((t) => t.trim()).filter(Boolean) : undefined,
+          content,
+        });
+        setShowSaveTemplateDialog(false);
+        await loadTemplates(currentProjectId);
+        addToast("Template saved", "success");
+      } catch (e) {
+        addToast("Failed to save template", "error");
+      } finally {
+        setIsSavingTemplate(false);
+      }
+    },
+    [currentProjectId, currentEditorSnapshotForTemplate, videoDuration, loadTemplates, addToast]
+  );
+
+  const handleApplyTemplateClick = useCallback(
+    async (templateMeta: { id: string; name: string }) => {
+      if (!currentProjectId) return;
+      const full = await projectStorage.getTemplate(currentProjectId, templateMeta.id);
+      if (full) {
+        setTemplateToApply(full);
+        setShowApplyTemplateDialog(true);
+      }
+    },
+    [currentProjectId]
+  );
+
+  const handleApplyTemplateSubmit = useCallback(
+    async (placeholderValues: Record<string, string>) => {
+      if (!currentProjectId || !templateToApply) return;
+      setIsApplyingTemplate(true);
+      try {
+        const result = await projectStorage.applyTemplate(currentProjectId, templateToApply.id, {
+          templateId: templateToApply.id,
+          videoDuration,
+          placeholderValues: Object.keys(placeholderValues).length ? placeholderValues : undefined,
+        });
+        setTextOverlays((prev) => ({
+          ...prev,
+          ...Object.fromEntries(
+            Object.entries(result.textOverlays).map(([id, snap]) => [
+              id,
+              { id, text: snap.text, fontSize: snap.fontSize, fontColor: snap.fontColor, centerX: snap.centerX, centerY: snap.centerY },
+            ])
+          ),
+        }));
+        setImageOverlays((prev) => ({
+          ...prev,
+          ...Object.fromEntries(
+            Object.entries(result.imageOverlays).map(([id, snap]) => [
+              id,
+              {
+                id,
+                assetId: snap.assetId,
+                width: snap.width,
+                height: snap.height,
+                centerX: snap.centerX,
+                centerY: snap.centerY,
+                opacity: snap.opacity,
+                rotation: snap.rotation,
+                maintainAspectRatio: snap.maintainAspectRatio ?? true,
+              },
+            ])
+          ),
+        }));
+        setEditorData((prev) =>
+          prev.map((row) => {
+            if (row.id === "text-track") {
+              const newActions = result.textTrackActions.map((a) => ({
+                id: a.id,
+                start: a.start,
+                end: a.end,
+                effectId: "textEffect" as const,
+                flexible: true,
+                movable: true,
+              }));
+              return { ...row, actions: [...row.actions, ...newActions] };
+            }
+            if (row.id === "image-track") {
+              const newActions = result.imageTrackActions.map((a) => ({
+                id: a.id,
+                start: a.start,
+                end: a.end,
+                effectId: "imageEffect" as const,
+                flexible: true,
+                movable: true,
+              }));
+              return { ...row, actions: [...row.actions, ...newActions] };
+            }
+            return row;
+          })
+        );
+        if (result.exportSettings) setExportSettings(result.exportSettings);
+        if (result.missingAssetIds?.length) {
+          addToast(`Some assets missing: ${result.missingAssetIds.length} not found`, "error");
+        } else {
+          addToast("Template applied", "success");
+        }
+        setShowApplyTemplateDialog(false);
+        setTemplateToApply(null);
+        setIsDirty(true);
+      } catch (e) {
+        addToast("Failed to apply template", "error");
+      } finally {
+        setIsApplyingTemplate(false);
+      }
+    },
+    [currentProjectId, templateToApply, videoDuration, addToast]
+  );
+
+  const handleDeleteTemplate = useCallback(
+    async (templateMeta: { id: string }) => {
+      if (!currentProjectId) return;
+      setDeletingTemplateId(templateMeta.id);
+      try {
+        await projectStorage.deleteTemplate(currentProjectId, templateMeta.id);
+        await loadTemplates(currentProjectId);
+        addToast("Template deleted", "success");
+      } catch {
+        addToast("Failed to delete template", "error");
+      } finally {
+        setDeletingTemplateId(null);
+      }
+    },
+    [currentProjectId, loadTemplates, addToast]
+  );
+
   return (
     <div className="space-y-4">
       {/* Toolbar */}
@@ -788,6 +972,12 @@ export default function EditorStep() {
             className="flex items-center gap-1.5 text-xs bg-green-600/20 hover:bg-green-600/40 text-green-300 border border-green-600/40 px-3 py-1.5 rounded-lg transition-colors"
           >
             <Music size={14} /> + Audio
+          </button>
+          <button
+            onClick={() => setShowTemplatesPanel(true)}
+            className="flex items-center gap-1.5 text-xs bg-indigo-600/20 hover:bg-indigo-600/40 text-indigo-300 border border-indigo-600/40 px-3 py-1.5 rounded-lg transition-colors"
+          >
+            <FileText size={14} /> Templates
           </button>
           <button
             onClick={handleSave}
@@ -888,6 +1078,39 @@ export default function EditorStep() {
         projectId={currentProjectId}
         onSelect={addImage}
         onClose={() => setShowAssetPicker(false)}
+      />
+
+      <TemplatesPanel
+        open={showTemplatesPanel}
+        onClose={() => setShowTemplatesPanel(false)}
+        templates={templates}
+        loading={templatesLoading}
+        onSaveCurrent={handleOpenSaveTemplateDialog}
+        onApply={handleApplyTemplateClick}
+        onDelete={handleDeleteTemplate}
+        deletingId={deletingTemplateId}
+        canSaveCurrent={canSaveCurrentAsTemplate}
+      />
+
+      <SaveTemplateDialog
+        open={showSaveTemplateDialog}
+        onClose={() => setShowSaveTemplateDialog(false)}
+        onSubmit={handleSaveTemplateSubmit}
+        textCount={Object.keys(textOverlays).length}
+        imageCount={Object.keys(imageOverlays).length}
+        isSaving={isSavingTemplate}
+      />
+
+      <ApplyTemplateDialog
+        open={showApplyTemplateDialog}
+        onClose={() => {
+          setShowApplyTemplateDialog(false);
+          setTemplateToApply(null);
+        }}
+        template={templateToApply}
+        videoDuration={videoDuration}
+        onApply={handleApplyTemplateSubmit}
+        isApplying={isApplyingTemplate}
       />
 
       {/* Export Dialog */}

@@ -25,19 +25,29 @@ export function workJsonPath(projectId: string, workId: string): string {
   return path.join(workDir(projectId, workId), "work.json");
 }
 
-/** Proje asset dizini: data/projects/{projectId}/assets */
+/** Proje asset dizini: data/projects/{projectId}/assets (binary dosyalar burada) */
 export function assetsDir(projectId: string): string {
   return path.join(projectDir(projectId), "assets");
-}
-
-/** Asset metadata dosyası */
-export function assetsJsonPath(projectId: string): string {
-  return path.join(assetsDir(projectId), "assets.json");
 }
 
 /** Tek bir asset dosya yolu (filename ile) */
 export function assetFilePath(projectId: string, filename: string): string {
   return path.join(assetsDir(projectId), filename);
+}
+
+/** Proje template dizini: data/projects/{projectId}/templates */
+export function templatesDir(projectId: string): string {
+  return path.join(projectDir(projectId), "templates");
+}
+
+/** Template metadata dosyası */
+export function templatesJsonPath(projectId: string): string {
+  return path.join(templatesDir(projectId), "templates.json");
+}
+
+/** Template thumbnail dosya yolu (opsiyonel) */
+export function templateThumbnailPath(projectId: string, templateId: string, ext = "png"): string {
+  return path.join(templatesDir(projectId), `${templateId}_thumbnail.${ext}`);
 }
 
 export function referenceVideoPath(projectId: string, workId: string): string {

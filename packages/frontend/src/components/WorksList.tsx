@@ -9,6 +9,7 @@ import { DEFAULT_ANALYZER_PROMPT } from "@viragen/shared";
 import ConfirmModal from "./ui/ConfirmModal";
 import { SkeletonCardList } from "./ui/SkeletonCard";
 import { StyleGuideForm } from "./ui/StyleGuideForm";
+import ExtractFromLandingModal from "./ui/ExtractFromLandingModal";
 
 interface WorksListProps {
   projectId: string;
@@ -37,6 +38,7 @@ export default function WorksList({ projectId }: WorksListProps) {
   const [deleting, setDeleting] = useState(false);
   const [openScenarioAnalysis, setOpenScenarioAnalysis] = useState(false);
   const [openImageVideo, setOpenImageVideo] = useState(false);
+  const [showExtractFromLanding, setShowExtractFromLanding] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const refresh = () => listWorks(projectId).then((w) => { setWorks(w); setLoading(false); });
@@ -118,6 +120,12 @@ export default function WorksList({ projectId }: WorksListProps) {
     } finally {
       setIsExtractingStyleGuide(false);
     }
+  };
+
+  const handleExtractFromLanding = (result: { styleGuide: StyleGuide }) => {
+    setEditStyleGuide(result.styleGuide);
+    setShowExtractFromLanding(false);
+    addToast("Style guide extracted from landing page", "success");
   };
 
   const handleSaveProject = async () => {
@@ -214,6 +222,7 @@ export default function WorksList({ projectId }: WorksListProps) {
                   onChange={setEditStyleGuide}
                   onExtract={handleExtractStyleGuide}
                   isExtracting={isExtractingStyleGuide}
+                  onExtractFromLanding={() => setShowExtractFromLanding(true)}
                 />
               </div>
             </div>
@@ -390,6 +399,13 @@ export default function WorksList({ projectId }: WorksListProps) {
         loading={deleting}
         onConfirm={handleConfirmDelete}
         onCancel={() => !deleting && setDeleteTargetId(null)}
+      />
+
+      <ExtractFromLandingModal
+        open={showExtractFromLanding}
+        onClose={() => setShowExtractFromLanding(false)}
+        onExtracted={handleExtractFromLanding}
+        mode="landing"
       />
     </div>
   );

@@ -2,8 +2,8 @@ import type { AnalysisResult, ScenarioScene, ProviderInfo, ProviderConfig, Style
 import { getAuthToken } from "../store/useAuthStore";
 
 const DEFAULT_CONFIG: ProviderConfig = {
-  vision: { providerId: "gemini", modelId: "gemini-2.0-flash" },
-  llm: { providerId: "gemini", modelId: "gemini-2.0-flash" },
+  vision: { providerId: "gemini", modelId: "gemini-2.5-flash" },
+  llm: { providerId: "gemini", modelId: "gemini-2.5-flash" },
   image: { providerId: "dalle", modelId: "dall-e-3" },
   video: { providerId: "runway", modelId: "gen3a_turbo" },
 };
@@ -213,6 +213,49 @@ export async function extractStyleGuide(text: string): Promise<{ styleGuide: Sty
       "x-api-key": headers["x-api-key"],
     },
     body: JSON.stringify({ text }),
+  });
+  if (!res.ok) {
+    const message = await parseErrorResponse(res);
+    throw new Error(message);
+  }
+  return res.json();
+}
+
+export interface ExtractFromLandingProductInfo {
+  name: string;
+  description: string;
+  targetAudience?: string;
+}
+
+/**
+ * Extract style guide and/or product info from a page URL (backend fetches and analyzes).
+ * @param url - Page URL
+ * @param options.mode - "landing" = full page → style guide (+ optional productInfo); "feature" = only feature section → productInfo only
+ * @param options.includeProductInfo - When mode is "landing", also return productInfo
+ */
+export async function extractStyleGuideFromLanding(
+  url: string,
+  options: { includeProductInfo?: boolean; mode?: "landing" | "feature" } = {}
+): Promise<{
+  styleGuide: StyleGuide;
+  productInfo?: ExtractFromLandingProductInfo;
+}> {
+  const { includeProductInfo = false, mode = "landing" } = options;
+  const headers = getHeaders("llm");
+  const res = await fetch("/api/style-guide/extract-from-landing", {
+    method: "POST",
+    headers: {
+      ...getAuthHeader(),
+      "Content-Type": "application/json",
+      "x-llm-provider": headers["x-llm-provider"],
+      "x-model-id": headers["x-model-id"],
+      "x-api-key": headers["x-api-key"],
+    },
+    body: JSON.stringify({
+      url: url.trim(),
+      includeProductInfo: mode === "landing" ? includeProductInfo : undefined,
+      mode,
+    }),
   });
   if (!res.ok) {
     const message = await parseErrorResponse(res);

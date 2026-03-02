@@ -330,6 +330,8 @@ ViraGen implements a 5-step video generation workflow. Each step builds upon the
 - knowledge: Additional context (optional)
 - styleGuide: Optional project StyleGuide; when present and non-empty, appended to system prompt as "## Project Style Guide" (tone, color palette, tempo, camera style, brand voice, must_include, must_avoid)
 
+**Scenario system prompt (default, in shared):** The default scenario system prompt (`DEFAULT_SCENARIO_SYSTEM_PROMPT` in `packages/shared/src/types/project.ts`) instructs the LLM to produce **photorealistic** content by default: image prompts should use "photo of...", "shot on...", or "as if captured by a camera"; video prompts should describe realistic motion and live-action feel; negative prompts should include illustration, cartoon, anime, drawing. Users can override via work-level system prompt.
+
 **Output**: Array of ScenarioScene objects containing:
 - scene_index: Scene number
 - duration_seconds: Scene duration
@@ -355,7 +357,9 @@ ViraGen implements a 5-step video generation workflow. Each step builds upon the
 **Data Flow**:
 - Frontend: `GenerateStep.tsx`, `SidePanel.tsx`, `ImageEditPanel.tsx`, `VideoEditPanel.tsx`, `AuthenticatedMedia.tsx`
 - API: `POST /api/generate/image`, `POST /api/generate/video`
-- Frontend sends project `styleGuide` in request body when present; backend builds a **style prefix** and prepends it to the scene prompt (image: color/tone/tempo → visual style; video: camera/tempo/tone → motion style), then appends custom instruction and scene prompt.
+- Frontend sends project `styleGuide` and work-level `image_instruction` / `video_instruction` (from work or project). When the user has not set custom instructions, **default instructions** are used: new projects and new works are created with `DEFAULT_IMAGE_INSTRUCTION` and `DEFAULT_VIDEO_INSTRUCTION` from shared (`packages/shared/src/types/project.ts`), so the Settings UI shows photorealistic defaults that the user can edit.
+- Backend builds a **style prefix** from the style guide (image: `buildImageStylePrefix` in `prompts/image.ts` — base: "Professional photography, natural lighting, lifelike textures", plus color/tone/tempo; video: camera/tempo/tone) and prepends it to the prompt. If `image_instruction` or `video_instruction` is empty in the request, the backend falls back to `DEFAULT_IMAGE_INSTRUCTION` and `DEFAULT_VIDEO_INSTRUCTION` from shared.
+- Final prompt: `[style prefix if style guide] + [image_instruction or DEFAULT_IMAGE_INSTRUCTION] + [scene prompt]` for image; same pattern for video.
 - Image Provider: DALL-E/Gemini; Video Provider: Runway/Gemini
 - Storage: `POST /api/projects/:id/works/:id/media/scene/:index/image|video`
 - Media URLs that point to own API (`/api/.../media/...`) are fetched with auth and shown via blob URLs (hook `useAuthenticatedMediaUrl`) so previews do not trigger 401.
@@ -484,10 +488,10 @@ All endpoints are prefixed with `/api`. Authentication uses JWT Bearer tokens un
 
 **Project Object Fields**:
 - id, userId, name
-- systemPrompt: Default LLM instructions
+- systemPrompt: Default LLM instructions (initialized from `DEFAULT_SCENARIO_SYSTEM_PROMPT` when project is created)
 - knowledge: Project context for AI
 - styleGuide: Optional structured style guide (tone, color_palette, tempo, camera_style, brand_voice, must_include, must_avoid); applied in scenario, image, and video generation
-- analyzerPrompt, imageSystemPrompt, videoSystemPrompt: Custom prompts
+- analyzerPrompt, imageSystemPrompt, videoSystemPrompt: Custom prompts; **imageSystemPrompt** and **videoSystemPrompt** are initialized from `DEFAULT_IMAGE_INSTRUCTION` and `DEFAULT_VIDEO_INSTRUCTION` (shared) when a new project is created, so new projects get photorealistic defaults that the user can change
 - createdAt, updatedAt
 
 ---
@@ -556,7 +560,8 @@ All endpoints are prefixed with `/api`. Authentication uses JWT Bearer tokens un
 - Headers: `x-image-provider`, `x-model-id`, `x-api-key`
 - Request: `{ prompt, negative_prompt?, image_instruction?, styleGuide? }`
 - Response: `{ imageUrl: string }`
-- **Style guide**: When `styleGuide` is present and non-empty, backend builds a style prefix (color palette, tone, tempo → visual style keywords) and prepends it to the prompt: `[style prefix] + [image_instruction] + [scene prompt]`.
+- **Default instruction**: If `image_instruction` is omitted or empty, the backend uses `DEFAULT_IMAGE_INSTRUCTION` from shared (photorealistic: "Realistic photography style. Photo of real-world scene, natural lighting and lifelike textures.").
+- **Style guide**: When `styleGuide` is present and non-empty, backend builds a style prefix (base: professional photography, natural lighting, lifelike textures; plus color palette, tone, tempo from `prompts/image.ts`) and prepends it to the prompt: `[style prefix] + [image_instruction or default] + [scene prompt]`.
 
 **Video Generation**
 
@@ -567,7 +572,8 @@ All endpoints are prefixed with `/api`. Authentication uses JWT Bearer tokens un
 - Headers: `x-video-provider`, `x-model-id`, `x-api-key`
 - Request: `{ image_url, prompt, duration?, video_instruction?, styleGuide? }`
 - Response: `{ videoUrl: string }`
-- **Style guide**: When `styleGuide` is present and non-empty, backend builds a style prefix (camera_style, tempo, tone → motion/cinematic keywords) and prepends it to the prompt: `[style prefix] + [video_instruction] + [scene prompt]`.
+- **Default instruction**: If `video_instruction` is omitted or empty, the backend uses `DEFAULT_VIDEO_INSTRUCTION` from shared (photorealistic: "Maintain photorealistic, live-action quality. Realistic motion and physics.").
+- **Style guide**: When `styleGuide` is present and non-empty, backend builds a style prefix (camera_style, tempo, tone → motion/cinematic keywords) and prepends it to the prompt: `[style prefix] + [video_instruction or default] + [scene prompt]`.
 - **Internal image URLs**: If `image_url` is an own media path (`/api/projects/.../works/.../media/scene/:index/image`), the backend fetches the image with the request’s auth, converts it to a data URL, and passes that to the video provider so the provider does not receive 401 when loading the image.
 
 ---
@@ -639,12 +645,12 @@ ViraGen uses MongoDB with Mongoose ODM. All models use custom string IDs (not Ob
 | _id | String | Yes | Custom string ID |
 | userId | String | Yes | Reference to User._id |
 | name | String | Yes | Project name |
-| systemPrompt | String | Yes | Default LLM system prompt |
+| systemPrompt | String | Yes | Default LLM system prompt (set to `DEFAULT_SCENARIO_SYSTEM_PROMPT` when project is created) |
 | knowledge | String | No | Additional AI context |
 | styleGuide | Object | No | Optional StyleGuide (tone, color_palette[], tempo, camera_style, brand_voice, must_include[], must_avoid[]) |
 | analyzerPrompt | String | No | Video analysis prompt |
-| imageSystemPrompt | String | No | Image generation prompt |
-| videoSystemPrompt | String | No | Video generation prompt |
+| imageSystemPrompt | String | No | Image generation extra instruction (set to `DEFAULT_IMAGE_INSTRUCTION` when project is created) |
+| videoSystemPrompt | String | No | Video generation extra instruction (set to `DEFAULT_VIDEO_INSTRUCTION` when project is created) |
 | createdAt | Number | Yes | Creation timestamp |
 | updatedAt | Number | Yes | Update timestamp |
 
@@ -665,10 +671,10 @@ This is the most complex model, containing nested subdocuments for analysis and 
 | _id | String | Yes | Custom string ID |
 | projectId | String | Yes | Reference to Project._id |
 | name | String | Yes | Work name |
-| systemPrompt | String | Yes | Scenario system prompt |
+| systemPrompt | String | Yes | Scenario system prompt (from project when work is created; default from shared) |
 | analyzerPrompt | String | No | Analysis prompt override |
-| imageSystemPrompt | String | No | Image prompt override |
-| videoSystemPrompt | String | No | Video prompt override |
+| imageSystemPrompt | String | No | Image extra instruction (from project when work is created; default `DEFAULT_IMAGE_INSTRUCTION` from shared so UI shows photorealistic default) |
+| videoSystemPrompt | String | No | Video extra instruction (from project when work is created; default `DEFAULT_VIDEO_INSTRUCTION` from shared so UI shows photorealistic default) |
 | currentStep | Number | Yes | Pipeline step (0-4) |
 | hasReferenceVideo | Boolean | Yes | Reference video flag |
 | mode | String | Yes | "style_transfer" or "content_remix" |
@@ -962,6 +968,7 @@ These are read by `api/client.ts` and sent as headers with each AI-related reque
 
 | Purpose | File Path |
 |---------|-----------|
+| Default scenario / image / video prompts (shared constants) | packages/shared/src/types/project.ts (DEFAULT_SCENARIO_SYSTEM_PROMPT, DEFAULT_IMAGE_INSTRUCTION, DEFAULT_VIDEO_INSTRUCTION) |
 | Backend entry | packages/backend/src/index.ts |
 | Frontend entry | packages/frontend/src/main.tsx |
 | Shared types | packages/shared/src/index.ts (includes types/style-guide.ts) |
@@ -981,6 +988,8 @@ These are read by `api/client.ts` and sent as headers with each AI-related reque
 | Side panel (Generate) | packages/frontend/src/components/ui/SidePanel.tsx |
 | Image/Video edit panels | packages/frontend/src/components/steps/ImageEditPanel.tsx, VideoEditPanel.tsx |
 | Style guide form | packages/frontend/src/components/ui/StyleGuideForm.tsx |
+| Image style prefix (photorealistic base + style guide) | packages/backend/src/prompts/image.ts |
+| Video style prefix | packages/backend/src/prompts/video.ts |
 | Auth-resolved media (img/video) | packages/frontend/src/components/ui/AuthenticatedMedia.tsx |
 | Auth media URL hook | packages/frontend/src/hooks/useAuthenticatedMediaUrl.ts |
 

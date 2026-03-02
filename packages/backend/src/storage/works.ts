@@ -1,5 +1,6 @@
 import fs from "fs/promises";
 import type { WorkMeta, WorkSnapshot } from "@viragen/shared";
+import { DEFAULT_IMAGE_INSTRUCTION, DEFAULT_VIDEO_INSTRUCTION } from "@viragen/shared";
 import {
   workDir,
   referenceVideoPath,
@@ -81,8 +82,8 @@ export async function createWork(projectId: string, name?: string): Promise<Work
     updatedAt: now,
     systemPrompt: project.systemPrompt,
     analyzerPrompt: project.analyzerPrompt ?? "",
-    imageSystemPrompt: project.imageSystemPrompt ?? "",
-    videoSystemPrompt: project.videoSystemPrompt ?? "",
+    imageSystemPrompt: (project.imageSystemPrompt?.trim() || DEFAULT_IMAGE_INSTRUCTION),
+    videoSystemPrompt: (project.videoSystemPrompt?.trim() || DEFAULT_VIDEO_INSTRUCTION),
     currentStep: 0,
     hasReferenceVideo: false,
     mode: "style_transfer",

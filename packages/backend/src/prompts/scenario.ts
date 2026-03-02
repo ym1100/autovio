@@ -69,7 +69,7 @@ ${intentDescription}
 
 Important: The scenes must form one continuous video. Each scene is the continuation of the previous one (same story, same world, same characters). Do not produce unrelated or disjointed shots.
 ${intent.language ? `Language: ${intent.language}` : ""}
-${intent.video_duration ? `Target total video duration: ${intent.video_duration} seconds. Create as many scenes as needed so that the sum of each scene's duration_seconds is about ${intent.video_duration}.` : "Default: create 4-6 scenes, 3-5 seconds each."}
+${intent.video_duration ? `Target total video duration: ${intent.video_duration} seconds. Create as many scenes as needed so that the sum of each scene's duration_seconds is about ${intent.video_duration}.` : "Default: create 1-2 scenes, 3-5 seconds each."}
 ${intent.scene_count ? `Create exactly ${intent.scene_count} scenes.` : ""}
 
 ## Output Format

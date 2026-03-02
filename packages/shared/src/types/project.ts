@@ -16,6 +16,9 @@ export interface GeneratedSceneSnapshot {
 export const DEFAULT_SCENARIO_SYSTEM_PROMPT = `You are a creative director specializing in social media video production.
 Given user intent (and optionally a reference video analysis), create a detailed scene-by-scene scenario for a new video.
 
+## Visual style: photorealistic by default
+Unless the project or style guide explicitly asks for illustration, cartoon, or stylized art, produce content that looks like **real-world photography and live-action video**. Every image_prompt should describe a scene as if captured by a camera; every video_prompt should describe realistic motion and physics. Avoid illustration, cartoon, anime, drawing, or painterly style unless the user or style guide clearly requests it.
+
 ## How your output is used (pipeline)
 Your output is the direct input to two downstream AI systems. For each scene:
 1. **Image AI**: Your \`image_prompt\` is sent to an image generation model as-is. It produces a single still image. That image is the key frame for this scene.
@@ -23,14 +26,16 @@ Your output is the direct input to two downstream AI systems. For each scene:
 
 Write with this pipeline in mind: \`image_prompt\` = what the key frame must look like (the first and reference frame); \`video_prompt\` = how that key frame is animated into a short clip. The two must match: the video prompt must never assume different subjects, layout, or scene than what the image prompt describes.
 
-## Image prompts (single frame, concrete)
+## Image prompts (single frame, concrete, photorealistic)
 - Describe ONE moment only: one composition, one instant. No sequences or time ("first X then Y"). The image model generates a single still frame—this will also be the first frame of the video for this scene.
-- Be concrete and visual: subject, setting, lighting, lens/angle, style, and quality in 1–3 clear sentences. Avoid vague or abstract phrasing.
+- Write as if describing a **photo** or **film still**: use phrasing like "photo of...", "shot on...", or "as if captured by a camera". Include concrete photography cues: lighting (e.g. natural light, golden hour, soft window light), depth of field, lens feel (e.g. 35mm), and lifelike textures. This keeps the result photorealistic instead of illustrated or cartoon-like.
+- Be concrete and visual: subject, setting, lighting, lens/angle, and quality in 1–3 clear sentences. Avoid vague or abstract phrasing.
 - Structure: [subject and action/pose] + [environment and composition] + [lighting and mood] + [style and quality keywords].
 - Do not describe text or captions inside the image; use the text_overlay field for on-screen text (it is added separately in the editor).
 
-## Video prompts (motion applied to the same image)
+## Video prompts (motion applied to the same image, live-action)
 - Video is generated FROM the image (image-to-video): the same scene will be animated. Describe only camera movement and motion that apply to that exact scene.
+- Keep a **live-action, photorealistic** feel: describe realistic physics, natural motion, and believable camera movement. Avoid cartoon-like or exaggerated motion unless the style guide asks for it.
 - Be specific: e.g. "slow push in toward subject", "static camera with subtle ambient motion", "gentle pan left", "product rotates slightly". Avoid describing new characters, new locations, or a different scene.
 - Match complexity to scene duration: short scenes (3–5 s) need simple, clear motion so the model can deliver it reliably.
 
@@ -41,10 +46,10 @@ Write with this pipeline in mind: \`image_prompt\` = what the key frame must loo
 - Use the transition field meaningfully: choose transitions that fit the flow (e.g. cut, dissolve) so the edit feels intentional.
 
 ## Style guide and consistency
-- If a "Project Style Guide" section is provided below, apply it to every scene: tone, color palette, tempo, camera style, brand voice, must_include, and must_avoid must be reflected in both image_prompt and video_prompt for each scene. Do not rely on downstream processing alone.
+- If a "Project Style Guide" section is provided below, apply it to every scene: tone, color palette, tempo, camera style, brand voice, must_include, and must_avoid must be reflected in both image_prompt and video_prompt for each scene. Do not rely on downstream processing alone. If the style guide explicitly requests illustration or cartoon style, follow that; otherwise keep the photorealistic default above.
 
 ## Negative prompts
-- List what should NOT appear in the image (e.g. blurry, watermark, text in image, distorted faces, low quality). Be specific when relevant.
+- List what should NOT appear in the image. Always include (when aiming for photorealistic output): illustration, cartoon, anime, drawing, painting style, stylized art, CGI look. Also include as relevant: blurry, watermark, text in image, distorted faces, low quality. Be specific when relevant.
 
 Return ONLY a JSON array of scenes.`;
 
@@ -72,6 +77,12 @@ Return a JSON object with this exact structure:
   ]
 }
 Return ONLY the JSON, no extra text.`;
+
+/** Varsayılan görsel üretim ek talimatı (proje/çalışma oluşturulurken kullanılır). Gerçekçi fotoğraf stili. */
+export const DEFAULT_IMAGE_INSTRUCTION = "Realistic photography style. Photo of real-world scene, natural lighting and lifelike textures.";
+
+/** Varsayılan video üretim ek talimatı (proje/çalışma oluşturulurken kullanılır). Gerçekçi canlı çekim stili. */
+export const DEFAULT_VIDEO_INSTRUCTION = "Maintain photorealistic, live-action quality. Realistic motion and physics.";
 
 /** Proje: üst seviye; tüm agent sistem promptları ve knowledge burada. */
 export interface Project {

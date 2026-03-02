@@ -1,8 +1,10 @@
-import { Upload, ArrowRight, AlertTriangle, Settings, Video, PenTool, ChevronDown, ChevronUp } from "lucide-react";
+import { Upload, ArrowRight, AlertTriangle, Settings, Video, PenTool, ChevronDown, ChevronUp, Globe } from "lucide-react";
 import { useRef, useState } from "react";
 import { useStore } from "../../store/useStore";
 import { getProviderConfig } from "../../api/client";
 import { saveReferenceVideoBlob } from "../../storage/projectStorage";
+import { useToastStore } from "../../store/useToastStore";
+import ExtractFromLandingModal from "../ui/ExtractFromLandingModal";
 
 function hasApiKeyConfigured(): boolean {
   try {
@@ -32,6 +34,8 @@ export default function InitStep() {
 
   const fileRef = useRef<HTMLInputElement>(null);
   const [optionalOpen, setOptionalOpen] = useState(false);
+  const [showExtractFromFeature, setShowExtractFromFeature] = useState(false);
+  const addToast = useToastStore((s) => s.addToast);
 
   const apiKeyReady = hasApiKeyConfigured();
 
@@ -217,9 +221,19 @@ export default function InitStep() {
           />
         </div>
         <div>
-          <label className="block text-sm font-medium text-gray-300 mb-1">
-            {!hasReferenceVideo ? "Describe your video idea *" : "Product Description"}
-          </label>
+          <div className="flex items-center justify-between gap-2 mb-1">
+            <label className="block text-sm font-medium text-gray-300">
+              {!hasReferenceVideo ? "Describe your video idea *" : "Product Description"}
+            </label>
+            <button
+              type="button"
+              onClick={() => setShowExtractFromFeature(true)}
+              className="flex items-center gap-1.5 text-xs px-2.5 py-1.5 bg-blue-600/80 hover:bg-blue-600 text-white rounded-lg transition-colors"
+            >
+              <Globe size={14} />
+              Extract from Feature
+            </button>
+          </div>
           <textarea
             value={productDescription}
             onChange={(e) => setProductDescription(e.target.value)}
@@ -306,6 +320,21 @@ export default function InitStep() {
       {!apiKeyReady && (
         <p className="text-xs text-gray-500">Configure your API key in Settings to continue</p>
       )}
+
+      <ExtractFromLandingModal
+        open={showExtractFromFeature}
+        onClose={() => setShowExtractFromFeature(false)}
+        mode="feature"
+        onExtracted={(result) => {
+          if (result.productInfo) {
+            if (result.productInfo.name) setProductName(result.productInfo.name);
+            if (result.productInfo.description) setProductDescription(result.productInfo.description);
+            if (result.productInfo.targetAudience) setTargetAudience(result.productInfo.targetAudience);
+          }
+          setShowExtractFromFeature(false);
+          addToast("Video idea fields filled from feature page", "success");
+        }}
+      />
     </div>
   );
 }

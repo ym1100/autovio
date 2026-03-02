@@ -1,6 +1,10 @@
 import fs from "fs/promises";
 import type { Project, ProjectMeta } from "@viragen/shared";
-import { DEFAULT_SCENARIO_SYSTEM_PROMPT } from "@viragen/shared";
+import {
+  DEFAULT_SCENARIO_SYSTEM_PROMPT,
+  DEFAULT_IMAGE_INSTRUCTION,
+  DEFAULT_VIDEO_INSTRUCTION,
+} from "@viragen/shared";
 import { ProjectModel, toProject, WorkModel } from "../db/index.js";
 import { projectDir } from "./path.js";
 
@@ -62,8 +66,8 @@ export async function createProject(name: string, userId: string): Promise<Proje
     systemPrompt: DEFAULT_SCENARIO_SYSTEM_PROMPT,
     knowledge: "",
     analyzerPrompt: "",
-    imageSystemPrompt: "",
-    videoSystemPrompt: "",
+    imageSystemPrompt: DEFAULT_IMAGE_INSTRUCTION,
+    videoSystemPrompt: DEFAULT_VIDEO_INSTRUCTION,
   };
   await saveProject(project);
   return project;

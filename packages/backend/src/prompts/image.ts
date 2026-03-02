@@ -1,14 +1,18 @@
 import type { StyleGuide } from "@viragen/shared";
 
 /**
- * Build style prefix for image generation prompt (color + tone + tempo → visual style)
+ * Build style prefix for image generation prompt (color + tone + tempo → visual style).
+ * Default is photorealistic: professional photography, natural lighting, lifelike look.
  */
 export function buildImageStylePrefix(guide: StyleGuide): string {
   const parts: string[] = [];
 
+  // Base: always lead with photorealistic default when we have any style guide
+  parts.push("Professional photography, natural lighting, lifelike textures");
+
   if (guide.color_palette?.length) {
     const colorDesc = describeColorPalette(guide.color_palette);
-    parts.push(`${colorDesc} color palette`);
+    parts.push(colorDesc);
   }
   if (guide.tone) {
     const styleKeywords = toneToVisualStyle(guide.tone);
@@ -19,12 +23,12 @@ export function buildImageStylePrefix(guide: StyleGuide): string {
     parts.push(compositionStyle);
   }
 
-  return parts.length > 0 ? parts.join(", ") : "";
+  return parts.join(", ");
 }
 
 function describeColorPalette(hexCodes: string[]): string {
   const colors = hexCodes.map(hexToColorName).join(" and ");
-  return `vibrant ${colors}`;
+  return `rich ${colors} color palette`;
 }
 
 function hexToColorName(hex: string): string {
@@ -42,23 +46,23 @@ function hexToColorName(hex: string): string {
 function toneToVisualStyle(tone: string): string {
   const lower = tone.toLowerCase();
   if (lower.includes("energetic") || lower.includes("dynamic")) {
-    return "dynamic composition, high contrast, vibrant lighting";
+    return "dynamic but realistic composition, high contrast, natural lighting";
   }
   if (lower.includes("professional") || lower.includes("corporate")) {
     return "clean composition, balanced lighting, professional quality";
   }
   if (lower.includes("calm") || lower.includes("peaceful")) {
-    return "soft lighting, gentle composition, serene atmosphere";
+    return "soft natural lighting, gentle composition, serene atmosphere";
   }
   if (lower.includes("playful") || lower.includes("fun")) {
-    return "creative composition, colorful lighting, playful mood";
+    return "lifelike composition, natural lighting, playful but realistic mood";
   }
-  return "high-quality composition";
+  return "high-quality, realistic composition";
 }
 
 function tempoToComposition(tempo: string): string {
   const t = tempo.toLowerCase();
   if (t === "fast") return "dynamic framing, bold composition";
   if (t === "slow") return "steady composition, balanced framing";
-  return "balanced composition";
+  return "balanced, natural composition";
 }

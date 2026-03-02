@@ -5,6 +5,7 @@ interface StyleGuideFormProps {
   onChange: (guide: StyleGuide | undefined) => void;
   onExtract?: () => void;
   isExtracting?: boolean;
+  onExtractFromLanding?: () => void;
 }
 
 export function StyleGuideForm({
@@ -12,6 +13,7 @@ export function StyleGuideForm({
   onChange,
   onExtract,
   isExtracting,
+  onExtractFromLanding,
 }: StyleGuideFormProps) {
   const guide = value || {};
 
@@ -21,18 +23,29 @@ export function StyleGuideForm({
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-2 flex-wrap">
         <h4 className="text-sm font-medium text-gray-400">Style Guide (Optional)</h4>
-        {onExtract && (
-          <button
-            type="button"
-            onClick={onExtract}
-            disabled={isExtracting}
-            className="text-xs px-3 py-1.5 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 transition-colors"
-          >
-            {isExtracting ? "Extracting…" : "✨ Extract from Context"}
-          </button>
-        )}
+        <div className="flex gap-2">
+          {onExtract && (
+            <button
+              type="button"
+              onClick={onExtract}
+              disabled={isExtracting}
+              className="text-xs px-3 py-1.5 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 transition-colors"
+            >
+              {isExtracting ? "Extracting…" : "✨ Extract from Context"}
+            </button>
+          )}
+          {onExtractFromLanding && (
+            <button
+              type="button"
+              onClick={onExtractFromLanding}
+              className="text-xs px-3 py-1.5 bg-blue-600/80 text-white rounded-lg hover:bg-blue-600 transition-colors"
+            >
+              Extract from Landing
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="border-t border-gray-700/50 pt-3">
@@ -157,7 +170,7 @@ export function StyleGuideForm({
 
       <p className="text-xs text-gray-500 italic">
         All fields are optional. Use &quot;Extract from Context&quot; to auto-fill from your
-        free-form notes.
+        free-form notes, or &quot;Extract from Landing&quot; to analyze a landing page URL.
       </p>
     </div>
   );

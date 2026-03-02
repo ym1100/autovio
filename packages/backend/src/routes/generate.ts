@@ -3,6 +3,7 @@ import { z } from "zod";
 import { getImageProvider, getVideoProvider } from "../providers/registry.js";
 import { isStyleGuideEmpty } from "@viragen/shared";
 import type { StyleGuide } from "@viragen/shared";
+import { DEFAULT_IMAGE_INSTRUCTION, DEFAULT_VIDEO_INSTRUCTION } from "@viragen/shared";
 import { buildImageStylePrefix } from "../prompts/image.js";
 import { buildVideoStylePrefix } from "../prompts/video.js";
 import { authenticate, requireScope } from "../middleware/auth.js";
@@ -107,7 +108,8 @@ router.post("/image", requireScope("ai:generate"), async (req, res, next) => {
       const prefix = buildImageStylePrefix(styleGuide as StyleGuide);
       if (prefix) fullPrompt += prefix + "\n\n";
     }
-    if (image_instruction?.trim()) fullPrompt += image_instruction.trim() + "\n\n";
+    const imageInstruction = image_instruction?.trim() || DEFAULT_IMAGE_INSTRUCTION;
+    fullPrompt += imageInstruction + "\n\n";
     fullPrompt += prompt;
 
     console.log(`[generate/image] provider=${providerId} model=${modelId}`);
@@ -144,7 +146,8 @@ router.post("/video", requireScope("ai:generate"), async (req, res, next) => {
       const prefix = buildVideoStylePrefix(styleGuide as StyleGuide);
       if (prefix) fullPrompt += prefix + "\n\n";
     }
-    if (video_instruction?.trim()) fullPrompt += video_instruction.trim() + "\n\n";
+    const videoInstruction = video_instruction?.trim() || DEFAULT_VIDEO_INSTRUCTION;
+    fullPrompt += videoInstruction + "\n\n";
     fullPrompt += prompt;
 
     const authHeader = req.headers.authorization as string | undefined;

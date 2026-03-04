@@ -7,6 +7,7 @@ dotenv.config({ path: path.resolve(__dirname, "../../../.env") });
 
 import express from "express";
 import cors from "cors";
+import swaggerUi from "swagger-ui-express";
 import analyzeRouter from "./routes/analyze.js";
 import scenarioRouter from "./routes/scenario.js";
 import generateRouter from "./routes/generate.js";
@@ -22,6 +23,7 @@ import templatesRouter from "./routes/templates.js";
 import { errorHandler } from "./middleware/error.js";
 import { requestLogger } from "./middleware/logger.js";
 import { connectDB } from "./db/index.js";
+import { generateOpenAPIDocument } from "./openapi/document.js";
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -34,6 +36,24 @@ app.use(requestLogger);
 app.get("/api/health", (_req, res) => {
   res.json({ status: "ok", timestamp: new Date().toISOString() });
 });
+
+// OpenAPI documentation
+const openApiDocument = generateOpenAPIDocument();
+app.use(
+  "/api-docs",
+  swaggerUi.serve,
+  swaggerUi.setup(openApiDocument, {
+    customCss: ".swagger-ui .topbar { display: none }",
+    customSiteTitle: "AutoVio API Documentation",
+    swaggerOptions: {
+      persistAuthorization: true,
+    },
+  })
+);
+app.get("/api/openapi.json", (_req, res) => {
+  res.json(openApiDocument);
+});
+console.log("[backend] OpenAPI documentation available at /api-docs");
 
 // Auth routes (public)
 app.use("/api/auth", authRouter);

@@ -8,3 +8,5 @@ data/
 *.tsbuildinfo
 Archive.zip
 plans/
+.claude/
+.cursor/

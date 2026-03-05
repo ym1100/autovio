@@ -64,74 +64,6 @@ Aşağıdaki endpoint'ler **TEST EDİLMEYECEK** (harici AI servisler gerektirir)
 
 ## Adım 2: Authentication (Kimlik Doğrulama)
 
-### Test 2.1: `POST /api/auth/register` - Kullanıcı Kaydı
-
-**Amaç:** Yeni kullanıcı oluştur
-
-**Adımlar:**
-1. "Authentication" tag'ini bul
-2. `POST /api/auth/register` endpoint'ini aç
-3. "Try it out" butonuna tıkla
-4. Request body'yi düzenle:
-   ```json
-   {
-     "email": "test@example.com",
-     "password": "TestPassword123!",
-     "name": "Test User"
-   }
-   ```
-5. "Execute" butonuna tıkla
-
-**Beklenen Sonuç:**
-- Status Code: `201 Created`
-- Response body:
-  ```json
-  {
-    "accessToken": "eyJhbGc...",
-    "refreshToken": "eyJhbGc...",
-    "user": {
-      "id": "507f...",
-      "email": "test@example.com",
-      "name": "Test User"
-    }
-  }
-  ```
-
-**Doğrulama:**
-- ✅ `accessToken` ve `refreshToken` JWT formatında olmalı
-- ✅ `user.email` request'teki email ile eşleşmeli
-- ✅ `user.id` MongoDB ObjectId formatında olmalı
-
-**Not:** `accessToken` değerini kopyala, sonraki testlerde kullanılacak!
-
----
-
-### Test 2.2: `POST /api/auth/login` - Kullanıcı Girişi
-
-**Amaç:** Mevcut kullanıcı ile giriş yap
-
-**Adımlar:**
-1. `POST /api/auth/login` endpoint'ini aç
-2. "Try it out" butonuna tıkla
-3. Request body:
-   ```json
-   {
-     "email": "test@example.com",
-     "password": "TestPassword123!"
-   }
-   ```
-4. "Execute" butonuna tıkla
-
-**Beklenen Sonuç:**
-- Status Code: `200 OK`
-- Response aynı `accessToken` ve `user` bilgilerini içermeli
-
-**Hata Senaryosu - Yanlış Şifre:**
-1. Password'u değiştir: `"password": "WrongPassword"`
-2. Execute
-3. Beklenen: `401 Unauthorized` ve hata mesajı
-
----
 
 ### Test 2.3: `GET /api/auth/me` - Kullanıcı Bilgisi
 
@@ -139,10 +71,9 @@ Aşağıdaki endpoint'ler **TEST EDİLMEYECEK** (harici AI servisler gerektirir)
 
 **Adımlar:**
 1. Swagger UI'ın sağ üst köşesindeki **"Authorize"** butonuna tıkla
-2. Bearer token alanına Test 2.1'den kopyaladığın `accessToken`'ı yapıştır
-   - Format: `Bearer eyJhbGc...` (başında "Bearer " olmamalı, sadece token)
-3. "Authorize" butonuna tıkla, "Close" ile kapat
-4. `GET /api/auth/me` endpoint'ini aç
+2. Bearer token alanına Veirlen API Key i `accessToken`'ı yapıştır
+   - Format: `Bearer vg_...` (başında "Bearer " olmamalı, sadece token)
+3. `GET /api/auth/me` endpoint'ini aç
 5. "Try it out" ve "Execute"
 
 **Beklenen Sonuç:**
@@ -795,3 +726,48 @@ Testleri tamamladıktan sonra doldurun:
 **Test Süresi Tahmini:** 30-45 dakika (AI endpoint'ler hariç)
 
 **Başarı Kriteri:** Tüm zorunlu testler PASSED olmalı, kritik hata bulunmamalı.
+
+---
+
+## Test Raporu (curl ile – 2026-03-05)
+
+**Test Tarihi:** 2026-03-05  
+**Backend:** localhost:3001  
+**Araç:** curl (tarayıcı kullanılmadı)
+
+### Test Sonuçları
+
+#### Health Check
+- ✅ GET /api/health – PASSED (200, `status: "ok"`, `timestamp` ISO 8601)
+
+#### Authentication
+- ✅ GET /api/auth/me (Bearer token) – PASSED (200)
+- ✅ GET /api/auth/me (tokensız) – 401 Unauthorized beklenen şekilde
+
+#### Projects
+- ✅ POST /api/projects – PASSED (201). Not: Backend yanıtta `id` döndürüyor (_id değil); `createdAt`/`updatedAt` number (ms).
+- ✅ GET /api/projects – PASSED (200), liste array
+- ✅ GET /api/projects/{id} – PASSED (200)
+- ✅ PUT /api/projects/{id} – PASSED (200). **Önemli:** Body'de `id` path ile aynı olmalı; aksi halde 400 "ID mismatch".
+- DELETE /api/projects/{id} – Test edilmedi (proje silinmedi).
+
+#### Works
+- ✅ POST /api/projects/{projectId}/works – PASSED (201). Yanıtta `id`, `name`, `currentStep`, `mode`, `hasReferenceVideo`, `createdAt`/`updatedAt` (number) mevcut.
+- ✅ GET /api/projects/{projectId}/works – PASSED (200)
+
+#### Providers
+- ✅ GET /api/providers – PASSED (200). **Not:** API tek bir **array** döndürüyor; dokümandaki `vision`/`llm`/`image`/`video` objesi değil. Her eleman `id`, `name`, `category`, `description`, `models` içeriyor.
+
+#### OpenAPI
+- ✅ openapi.json geçerli JSON; `openapi`, `paths`, `components` mevcut.
+
+### Dokümantasyonda Yapılan Düzeltmeler (document.ts)
+
+1. **UserResponse** schema eklendi: GET /api/auth/me yanıtı için; `createdAt`/`updatedAt` number (Unix ms).
+2. **Path /api/auth/me** eklendi: GET, Bearer auth, 200 (UserResponse), 401 (Error).
+3. **ProjectResponse:** `id` eklendi; `_id` deprecated olarak bırakıldı; `createdAt`/`updatedAt` → number; `analyzerPrompt` eklendi.
+4. **UpdateProjectRequest** eklendi: PUT /api/projects/{id} için; `id` ve `name` required; body.id path ile eşleşmeli. 400 "ID mismatch" response dokümante edildi.
+5. **WorkResponse:** `id` eklendi; `name`, `systemPrompt`, `analyzerPrompt`, `imageSystemPrompt`, `videoSystemPrompt`, `language`, `analysis`, `scenes`, `generatedScenes` eklendi; `createdAt`/`updatedAt` → number.
+6. **GET /api/providers:** Yanıt şeması tek array olacak şekilde güncellendi; her item `id`, `name`, `category`, `description`, `models` (array of { id, name, description }).
+7. **Health** tag global tags listesine eklendi.
+8. **Health response:** `timestamp` için example eklendi.

@@ -41,12 +41,19 @@ router.get("/:id", requireScope("projects:read"), async (req, res, next) => {
   }
 });
 
-// Create project
+// Create project (all CreateProjectRequest body fields are applied)
 router.post("/", requireScope("projects:write"), async (req, res, next) => {
   try {
     const userId = req.user!.id;
-    const name = (req.body?.name as string) || "Yeni Proje";
-    const project = await createProject(name, userId);
+    const body = req.body ?? {};
+    const name = (body.name as string) || "Yeni Proje";
+    const project = await createProject(name, userId, {
+      systemPrompt: body.systemPrompt,
+      knowledge: body.knowledge,
+      styleGuide: body.styleGuide,
+      imageSystemPrompt: body.imageSystemPrompt,
+      videoSystemPrompt: body.videoSystemPrompt,
+    });
     res.status(201).json(project);
   } catch (e) {
     next(e);

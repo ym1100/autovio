@@ -87,6 +87,87 @@ function resolveModelId(
   return modelId;
 }
 
+/** Scene shape needed for generateSceneImageAndVideo (subset of ScenarioScene). */
+export interface SceneForGeneration {
+  image_prompt: string;
+  negative_prompt?: string;
+  video_prompt: string;
+  duration_seconds?: number;
+}
+
+export interface GenerateSceneImageAndVideoOptions {
+  imageInstruction?: string;
+  videoInstruction?: string;
+  styleGuide?: StyleGuide;
+  apiKey: string;
+  imageProviderId: string;
+  imageModelId: string | undefined;
+  videoProviderId: string;
+  videoModelId: string | undefined;
+}
+
+/**
+ * Generate image for a scene, then generate video from that same image (UI flow).
+ * The image returned by the image provider is passed directly to the video provider—no re-fetch.
+ */
+export async function generateSceneImageAndVideo(
+  scene: SceneForGeneration,
+  options: GenerateSceneImageAndVideoOptions,
+): Promise<{ imageUrl: string; videoUrl: string }> {
+  const {
+    imageInstruction,
+    videoInstruction,
+    styleGuide,
+    apiKey,
+    imageProviderId,
+    imageModelId,
+    videoProviderId,
+    videoModelId,
+  } = options;
+
+  const imageProvider = getImageProvider(imageProviderId);
+  const imgModel = resolveModelId(imageModelId, imageProvider.models);
+
+  let imageFullPrompt = "";
+  if (styleGuide && !isStyleGuideEmpty(styleGuide)) {
+    const prefix = buildImageStylePrefix(styleGuide);
+    if (prefix) imageFullPrompt += prefix + "\n\n";
+  }
+  const imgInstr = imageInstruction?.trim() || DEFAULT_IMAGE_INSTRUCTION;
+  imageFullPrompt += imgInstr + "\n\n";
+  imageFullPrompt += scene.image_prompt;
+
+  const imageUrl = await imageProvider.generate(
+    imageFullPrompt,
+    scene.negative_prompt ?? "",
+    apiKey,
+    imgModel,
+  );
+
+  const videoProvider = getVideoProvider(videoProviderId);
+  const vidModel = resolveModelId(videoModelId, videoProvider.models);
+  const duration = scene.duration_seconds ?? 5;
+
+  let videoFullPrompt = "";
+  if (styleGuide && !isStyleGuideEmpty(styleGuide)) {
+    const prefix = buildVideoStylePrefix(styleGuide);
+    if (prefix) videoFullPrompt += prefix + "\n\n";
+  }
+  const vidInstr = videoInstruction?.trim() || DEFAULT_VIDEO_INSTRUCTION;
+  videoFullPrompt += vidInstr + "\n\n";
+  videoFullPrompt += scene.video_prompt;
+
+  const videoUrl = await videoProvider.convert(
+    imageUrl,
+    videoFullPrompt,
+    duration,
+    apiKey,
+    vidModel,
+  );
+
+  return { imageUrl, videoUrl };
+}
+
 router.post("/image", requireScope("ai:generate"), async (req, res, next) => {
   try {
     const providerId = req.headers["x-image-provider"] as string || "dalle";

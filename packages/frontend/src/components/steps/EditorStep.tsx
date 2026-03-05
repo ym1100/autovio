@@ -13,7 +13,6 @@ import type {
   TimelineRow,
   TimelineAction,
   ClipMetaMap,
-  ClipMeta,
   TextOverlayMap,
   TextOverlay,
   ImageOverlayMap,
@@ -37,13 +36,24 @@ function resolveUrl(url: string | undefined, map: Record<string, string>): strin
   return map[url] ?? url;
 }
 
+/** Resolves API media URLs to blob URLs. Avoids passing raw API URLs to <video>/<img> so the browser doesn't send unauthenticated GETs (401). */
 function buildDisplayClipMeta(clipMeta: ClipMetaMap, resolvedUrlMap: Record<string, string>): ClipMetaMap {
   const out: ClipMetaMap = {};
   for (const [id, meta] of Object.entries(clipMeta)) {
+    const imageUrl = meta.imageUrl
+      ? isApiMediaPath(meta.imageUrl)
+        ? resolvedUrlMap[meta.imageUrl] ?? undefined
+        : (resolvedUrlMap[meta.imageUrl] ?? meta.imageUrl)
+      : undefined;
+    const videoUrl = meta.videoUrl
+      ? isApiMediaPath(meta.videoUrl)
+        ? resolvedUrlMap[meta.videoUrl] ?? undefined
+        : (resolvedUrlMap[meta.videoUrl] ?? meta.videoUrl)
+      : undefined;
     out[id] = {
       ...meta,
-      imageUrl: resolveUrl(meta.imageUrl, resolvedUrlMap),
-      videoUrl: resolveUrl(meta.videoUrl, resolvedUrlMap),
+      imageUrl,
+      videoUrl,
     };
   }
   return out;
@@ -240,11 +250,41 @@ export default function EditorStep() {
     if (savedEditorState?.editorData?.videoTrack?.length && generatedScenes.some((s) => s.status === "done")) {
       return reconstructFromSavedState(savedEditorState, generatedScenes);
     }
+    // Use timeline from scenes but preserve saved overlays/export/audio so we don't overwrite DB with empty state
+    const textOverlays: TextOverlayMap = {};
+    if (savedEditorState?.textOverlays) {
+      for (const [id, snap] of Object.entries(savedEditorState.textOverlays)) {
+        textOverlays[id] = {
+          id,
+          text: snap.text,
+          fontSize: snap.fontSize,
+          fontColor: snap.fontColor,
+          centerX: snap.centerX,
+          centerY: snap.centerY,
+        };
+      }
+    }
+    const imageOverlays: ImageOverlayMap = {};
+    if (savedEditorState?.imageOverlays) {
+      for (const [id, snap] of Object.entries(savedEditorState.imageOverlays)) {
+        imageOverlays[id] = {
+          id,
+          assetId: snap.assetId,
+          width: snap.width,
+          height: snap.height,
+          centerX: snap.centerX,
+          centerY: snap.centerY,
+          opacity: snap.opacity,
+          rotation: snap.rotation,
+          maintainAspectRatio: snap.maintainAspectRatio ?? true,
+        };
+      }
+    }
     return {
       ...initialFromScenes,
-      textOverlays: {} as TextOverlayMap,
-      imageOverlays: {} as ImageOverlayMap,
-      exportSettings: { width: 1080, height: 1920, fps: 30 } as ExportSettings,
+      textOverlays,
+      imageOverlays,
+      exportSettings: savedEditorState?.exportSettings ?? { width: 1080, height: 1920, fps: 30 } as ExportSettings,
     };
   }, [savedEditorState, generatedScenes, initialFromScenes]);
 

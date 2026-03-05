@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { AnalysisResultSchema, UserIntentSchema } from "@autovio/shared";
-import type { ScenarioScene, StyleGuide } from "@autovio/shared";
+import type { AnalysisResult, ScenarioScene, StyleGuide, UserIntent } from "@autovio/shared";
 import { ScenarioSceneSchema } from "@autovio/shared";
 import { isStyleGuideEmpty } from "@autovio/shared";
 import { z } from "zod";
@@ -15,6 +15,37 @@ import { authenticate, requireScope } from "../middleware/auth.js";
 const router = Router();
 
 router.use(authenticate);
+
+/** Shared scenario generation: same logic as UI "Build Scenario". Used by POST /api/scenario and POST /api/projects/:projectId/works/:workId/scenario. */
+export async function generateScenario(
+  analysis: AnalysisResult | null | undefined,
+  intent: UserIntent,
+  options: {
+    systemPrompt?: string;
+    knowledge?: string;
+    styleGuide?: StyleGuide;
+  },
+  apiKey: string,
+  providerId: string = "gemini",
+  modelId?: string
+): Promise<ScenarioScene[]> {
+  const provider = getLLMProvider(providerId);
+  let baseSystemPrompt = options.systemPrompt?.trim() || getScenarioSystemPrompt();
+  if (options.styleGuide && !isStyleGuideEmpty(options.styleGuide)) {
+    baseSystemPrompt += "\n\n" + formatStyleGuideForPrompt(options.styleGuide);
+  }
+  const systemPrompt = options.knowledge?.trim()
+    ? `${baseSystemPrompt}\n\n## Project information (to understand this project)\n${options.knowledge.trim()}`
+    : baseSystemPrompt;
+  const userPrompt = getScenarioUserPrompt(analysis ?? undefined, intent);
+
+  console.log(`[scenario] provider=${providerId} model=${modelId}`);
+  const response = await provider.generate(systemPrompt, userPrompt, apiKey, modelId);
+  const jsonMatch = response.match(/```json\s*([\s\S]*?)```/) || response.match(/\[[\s\S]*\]/);
+  if (!jsonMatch) throw new Error("Failed to parse scenario response as JSON");
+  const raw = JSON.parse(jsonMatch[1] || jsonMatch[0]);
+  return z.array(ScenarioSceneSchema).parse(raw);
+}
 
 const RequestSchema = z.object({
   analysis: AnalysisResultSchema.optional(),
@@ -36,7 +67,7 @@ const RequestSchema = z.object({
 
 router.post("/", requireScope("ai:generate"), async (req, res, next) => {
   try {
-    const providerId = req.headers["x-llm-provider"] as string || "gemini";
+    const providerId = (req.headers["x-llm-provider"] as string) || "gemini";
     const modelId = req.headers["x-model-id"] as string | undefined;
     const apiKey = req.headers["x-api-key"] as string;
 
@@ -52,30 +83,14 @@ router.post("/", requireScope("ai:generate"), async (req, res, next) => {
       knowledge,
       styleGuide,
     } = RequestSchema.parse(req.body);
-    const provider = getLLMProvider(providerId);
-
-    let baseSystemPrompt = customSystemPrompt?.trim() || getScenarioSystemPrompt();
-    if (styleGuide && !isStyleGuideEmpty(styleGuide as StyleGuide)) {
-      baseSystemPrompt += "\n\n" + formatStyleGuideForPrompt(styleGuide as StyleGuide);
-    }
-    const systemPrompt = knowledge?.trim()
-      ? `${baseSystemPrompt}\n\n## Project information (to understand this project)\n${knowledge.trim()}`
-      : baseSystemPrompt;
-    const userPrompt = getScenarioUserPrompt(analysis, intent);
-
-    console.log(`[scenario] provider=${providerId} model=${modelId}`);
-    console.log("[scenario] system prompt:\n", systemPrompt);
-    console.log("[scenario] user prompt:\n", userPrompt);
-
-    const response = await provider.generate(systemPrompt, userPrompt, apiKey, modelId);
-    // Parse the JSON array from response
-    const jsonMatch = response.match(/```json\s*([\s\S]*?)```/) || response.match(/\[[\s\S]*\]/);
-    if (!jsonMatch) throw new Error("Failed to parse scenario response as JSON");
-    console.log("[scenario] response:\n", response);
-
-    const raw = JSON.parse(jsonMatch[1] || jsonMatch[0]);
-    const scenes: ScenarioScene[] = z.array(ScenarioSceneSchema).parse(raw);
-
+    const scenes = await generateScenario(
+      analysis ?? null,
+      intent,
+      { systemPrompt: customSystemPrompt, knowledge, styleGuide },
+      apiKey,
+      providerId,
+      modelId
+    );
     res.json({ scenes });
   } catch (err) {
     next(err);

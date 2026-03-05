@@ -54,7 +54,19 @@ export async function saveProject(project: Project, userId?: string): Promise<vo
   await ProjectModel.findOneAndUpdate(filter, updateData, { upsert: true, new: true });
 }
 
-export async function createProject(name: string, userId: string): Promise<Project> {
+export interface CreateProjectOptions {
+  systemPrompt?: string;
+  knowledge?: string;
+  styleGuide?: Project["styleGuide"];
+  imageSystemPrompt?: string;
+  videoSystemPrompt?: string;
+}
+
+export async function createProject(
+  name: string,
+  userId: string,
+  options?: CreateProjectOptions
+): Promise<Project> {
   const id = "proj_" + Date.now() + "_" + Math.random().toString(36).slice(2, 9);
   const now = Date.now();
   const project: Project = {
@@ -63,11 +75,12 @@ export async function createProject(name: string, userId: string): Promise<Proje
     name: name || "Yeni Proje",
     createdAt: now,
     updatedAt: now,
-    systemPrompt: DEFAULT_SCENARIO_SYSTEM_PROMPT,
-    knowledge: "",
+    systemPrompt: options?.systemPrompt ?? DEFAULT_SCENARIO_SYSTEM_PROMPT,
+    knowledge: options?.knowledge ?? "",
     analyzerPrompt: "",
-    imageSystemPrompt: DEFAULT_IMAGE_INSTRUCTION,
-    videoSystemPrompt: DEFAULT_VIDEO_INSTRUCTION,
+    imageSystemPrompt: options?.imageSystemPrompt ?? DEFAULT_IMAGE_INSTRUCTION,
+    videoSystemPrompt: options?.videoSystemPrompt ?? DEFAULT_VIDEO_INSTRUCTION,
+    styleGuide: options?.styleGuide,
   };
   await saveProject(project);
   return project;

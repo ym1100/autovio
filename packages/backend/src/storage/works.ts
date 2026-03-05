@@ -1,5 +1,5 @@
 import fs from "fs/promises";
-import type { WorkMeta, WorkSnapshot } from "@autovio/shared";
+import type { WorkMeta, WorkSnapshot, ScenarioScene } from "@autovio/shared";
 import { DEFAULT_IMAGE_INSTRUCTION, DEFAULT_VIDEO_INSTRUCTION } from "@autovio/shared";
 import {
   workDir,
@@ -14,7 +14,7 @@ import {
   resolveWorkAudioPath,
 } from "./path.js";
 import { getProject } from "./projects.js";
-import { WorkModel, toWorkSnapshot } from "../db/index.js";
+import { WorkModel, toWorkSnapshot, type WorkDocument } from "../db/index.js";
 
 async function ensureDir(dir: string): Promise<void> {
   await fs.mkdir(dir, { recursive: true });
@@ -31,9 +31,22 @@ export async function listWorks(projectId: string): Promise<WorkMeta[]> {
 }
 
 export async function getWork(projectId: string, workId: string): Promise<WorkSnapshot | null> {
-  const doc = await WorkModel.findOne({ _id: workId, projectId });
+  const doc = await WorkModel.findOne({ _id: workId, projectId }).lean();
   if (!doc) return null;
-  return toWorkSnapshot(doc);
+  return toWorkSnapshot(doc as WorkDocument);
+}
+
+/** Updates only scenes and updatedAt on an existing work. Does not create a work (no upsert). */
+export async function updateWorkScenes(
+  projectId: string,
+  workId: string,
+  scenes: ScenarioScene[]
+): Promise<boolean> {
+  const result = await WorkModel.updateOne(
+    { _id: workId, projectId },
+    { $set: { scenes, updatedAt: Date.now() } }
+  );
+  return result.matchedCount > 0;
 }
 
 export async function saveWork(projectId: string, snapshot: WorkSnapshot): Promise<void> {
@@ -71,7 +84,21 @@ export async function saveWork(projectId: string, snapshot: WorkSnapshot): Promi
   );
 }
 
-export async function createWork(projectId: string, name?: string): Promise<WorkSnapshot> {
+export interface CreateWorkOptions {
+  mode?: WorkSnapshot["mode"];
+  productName?: string;
+  productDescription?: string;
+  targetAudience?: string;
+  language?: string;
+  videoDuration?: number;
+  sceneCount?: number;
+}
+
+export async function createWork(
+  projectId: string,
+  name?: string,
+  options?: CreateWorkOptions
+): Promise<WorkSnapshot> {
   const project = await getProject(projectId);
   if (!project) throw new Error("Project not found");
 
@@ -89,13 +116,13 @@ export async function createWork(projectId: string, name?: string): Promise<Work
     videoSystemPrompt: (project.videoSystemPrompt?.trim() || DEFAULT_VIDEO_INSTRUCTION),
     currentStep: 0,
     hasReferenceVideo: false,
-    mode: "style_transfer",
-    productName: "",
-    productDescription: "",
-    targetAudience: "",
-    language: "",
-    videoDuration: undefined,
-    sceneCount: undefined,
+    mode: options?.mode ?? "style_transfer",
+    productName: options?.productName ?? "",
+    productDescription: options?.productDescription ?? "",
+    targetAudience: options?.targetAudience ?? "",
+    language: options?.language ?? "",
+    videoDuration: options?.videoDuration,
+    sceneCount: options?.sceneCount,
     analysis: null,
     scenes: [],
     generatedScenes: [],

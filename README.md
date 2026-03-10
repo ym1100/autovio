@@ -3,10 +3,23 @@
 AI video generation pipeline for automating video creation. Generate videos from text prompts using LLMs, image generation models, and video synthesis APIs. Built for developers, content creators, and SaaS platforms.
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/Auto-Vio/autovio/main/AutoVio-Gif.gif" alt="AutoVio Demo" width="800">
+  <img src="./AutoVio-Gif.gif" alt="AutoVio Demo" width="800">
 </p>
 
-📖 **[Documentation](https://auto-vio.github.io/autovio-docs/)** | 🚀 **[Quick Start](https://auto-vio.github.io/autovio-docs/getting-started/quickstart/)**
+<p align="center">
+  <a href="https://auto-vio.github.io/autovio-docs/"><strong>📖 Documentation</strong></a> ·
+  <a href="https://auto-vio.github.io/autovio-docs/getting-started/quickstart/"><strong>🚀 Quick Start</strong></a> ·
+  <a href="https://auto-vio.github.io/autovio-docs/api/overview/"><strong>📡 API Reference</strong></a> ·
+  <a href="https://auto-vio.github.io/autovio-docs/mcp/overview/"><strong>🤖 MCP Server</strong></a>
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/license-PolyForm%20Noncommercial-blue" alt="License">
+  <img src="https://img.shields.io/badge/TypeScript-5.7-blue?logo=typescript" alt="TypeScript">
+  <img src="https://img.shields.io/badge/React-18-61DAFB?logo=react" alt="React">
+  <img src="https://img.shields.io/badge/Express-4-000000?logo=express" alt="Express">
+  <img src="https://img.shields.io/badge/MongoDB-6-47A248?logo=mongodb" alt="MongoDB">
+</p>
 
 ## What is AutoVio?
 
@@ -71,8 +84,8 @@ Use MCP-compatible apps for video generation on the go:
 ### 1. Clone and install
 
 ```bash
-git clone <repository-url>
-cd AutoVio
+git clone https://github.com/Auto-Vio/autovio.git
+cd autovio
 bun install
 ```
 

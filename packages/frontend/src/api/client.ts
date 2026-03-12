@@ -44,6 +44,22 @@ function getHeaders(category: keyof ProviderConfig): Record<string, string> {
   };
 }
 
+/**
+ * Get provider headers for a specific category (for use with work-based endpoints)
+ * Does NOT include Authorization header - that should be added separately
+ */
+export function getProviderHeaders(category: keyof ProviderConfig): Record<string, string> {
+  const config = getProviderConfig();
+  const keys = getApiKeys();
+  const selection = config[category];
+
+  return {
+    [`x-${category}-provider`]: selection.providerId,
+    "x-model-id": selection.modelId,
+    "x-api-key": keys[selection.providerId] || "",
+  };
+}
+
 export async function analyzeVideo(
   file: File,
   mode: "style_transfer" | "content_remix",

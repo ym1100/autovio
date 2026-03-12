@@ -11,6 +11,7 @@ import type {
   EditorTemplateContent,
   TemplateApplicationRequest,
   TemplateApplicationResult,
+  ProjectType,
 } from "@autovio/shared";
 import { getAuthToken } from "../store/useAuthStore";
 
@@ -57,11 +58,11 @@ export async function saveProject(project: Project): Promise<void> {
   if (!res.ok) throw new Error("Failed to save project");
 }
 
-export async function createProject(name: string): Promise<Project> {
+export async function createProject(name: string, projectType?: ProjectType): Promise<Project> {
   const res = await fetch(API, {
     method: "POST",
     headers: { ...getAuthHeader(), "Content-Type": "application/json" },
-    body: JSON.stringify({ name: name || "New Project" }),
+    body: JSON.stringify({ name: name || "New Project", projectType }),
   });
   if (!res.ok) throw new Error("Failed to create project");
   return res.json();
@@ -91,12 +92,13 @@ export function getProjectAssetUrl(projectId: string, assetId: string): string {
 export async function uploadProjectAsset(
   projectId: string,
   file: File,
-  options?: { name?: string; tags?: string[] }
+  options?: { name?: string; tags?: string[]; description?: string }
 ): Promise<ProjectAsset> {
   const form = new FormData();
   form.append("file", file);
   if (options?.name) form.append("name", options.name);
   if (options?.tags?.length) form.append("tags", JSON.stringify(options.tags));
+  if (options?.description) form.append("description", options.description);
   const res = await fetch(`${API}/${projectId}/assets`, {
     method: "POST",
     headers: getAuthHeader(),
@@ -383,4 +385,47 @@ export async function persistVideoUrlAndGetObjectUrl(
   if (!authRes.ok) throw new Error("Failed to load saved video");
   const savedBlob = await authRes.blob();
   return URL.createObjectURL(savedBlob);
+}
+
+// --- Scenario Generation (work-based) ---
+
+export async function generateWorkScenario(
+  projectId: string,
+  workId: string,
+  providerHeaders: Record<string, string>
+): Promise<{ scenes: any[] }> {
+  const res = await fetch(`${API}/${projectId}/works/${workId}/scenario`, {
+    method: "POST",
+    headers: {
+      ...getAuthHeader(),
+      ...providerHeaders,
+    },
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: "Scenario generation failed" }));
+    throw new Error((err as { error?: string }).error || "Failed to generate scenario");
+  }
+  return res.json();
+}
+
+// --- Scene Generation (work-based) ---
+
+export async function generateWorkScene(
+  projectId: string,
+  workId: string,
+  sceneIndex: number,
+  providerHeaders: Record<string, string>
+): Promise<{ imageUrl: string; videoUrl: string }> {
+  const res = await fetch(`${API}/${projectId}/works/${workId}/generate/scene/${sceneIndex}`, {
+    method: "POST",
+    headers: {
+      ...getAuthHeader(),
+      ...providerHeaders,
+    },
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: "Scene generation failed" }));
+    throw new Error((err as { error?: string }).error || "Failed to generate scene");
+  }
+  return res.json();
 }

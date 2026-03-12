@@ -1,8 +1,9 @@
 import { create } from "zustand";
-import type { AnalysisResult, ScenarioScene, ProviderConfig, StyleGuide } from "@autovio/shared";
-import { getProviderConfig, generateImage as apiGenerateImage, generateVideo as apiGenerateVideo } from "../api/client";
+import type { AnalysisResult, ScenarioScene, ProviderConfig, StyleGuide, ProjectType, AssetUsageMode } from "@autovio/shared";
+import { getProviderConfig, getProviderHeaders, generateImage as apiGenerateImage, generateVideo as apiGenerateVideo } from "../api/client";
 import type { WorkSnapshot, EditorStateSnapshot, EditorTemplateMeta } from "@autovio/shared";
 import * as projectStorage from "../storage/projectStorage";
+import { getAuthToken } from "./useAuthStore";
 
 export type PipelineStep = 0 | 1 | 2 | 3 | 4;
 
@@ -36,7 +37,7 @@ interface AppState {
   goToProjectsList: () => void;
   goToProjectWorks: (projectId: string) => void;
   loadWork: (projectId: string, workId: string) => Promise<void>;
-  createNewProject: (name?: string) => Promise<void>;
+  createNewProject: (name?: string, projectType?: ProjectType) => Promise<void>;
   createNewWork: (projectId: string, name?: string) => Promise<void>;
   persistCurrentWork: () => Promise<void>;
   editorState: EditorStateSnapshot | undefined;
@@ -62,6 +63,8 @@ interface AppState {
   language: string;
   videoDuration: number | undefined;
   sceneCount: number | undefined;
+  selectedAssetIds: string[];
+  assetUsageMode: AssetUsageMode | undefined;
   setVideoFile: (file: File | null) => void;
   setHasReferenceVideo: (has: boolean) => void;
   setMode: (mode: "style_transfer" | "content_remix") => void;
@@ -71,6 +74,8 @@ interface AppState {
   setLanguage: (lang: string) => void;
   setVideoDuration: (dur: number | undefined) => void;
   setSceneCount: (n: number | undefined) => void;
+  setSelectedAssetIds: (ids: string[]) => void;
+  setAssetUsageMode: (mode: AssetUsageMode | undefined) => void;
 
   // Step 1 — Analysis
   analysis: AnalysisResult | null;
@@ -84,7 +89,7 @@ interface AppState {
   scenes: ScenarioScene[];
   scenarioLoading: boolean;
   scenarioError: string | null;
-  setScenes: (scenes: ScenarioScene[]) => void;
+  setScenes: (scenes: ScenarioScene[]) => Promise<void>;
   updateScene: (index: number, scene: Partial<ScenarioScene>) => void;
   removeScene: (index: number) => void;
   setScenarioLoading: (loading: boolean) => void;
@@ -156,6 +161,8 @@ const initialState = {
   language: "",
   videoDuration: undefined as number | undefined,
   sceneCount: undefined as number | undefined,
+  selectedAssetIds: [] as string[],
+  assetUsageMode: undefined as AssetUsageMode | undefined,
   analysis: null as AnalysisResult | null,
   analysisLoading: false,
   analysisError: null as string | null,
@@ -187,6 +194,8 @@ type PersistableState = Pick<
   | "language"
   | "videoDuration"
   | "sceneCount"
+  | "selectedAssetIds"
+  | "assetUsageMode"
   | "analysis"
   | "scenes"
   | "generatedScenes"
@@ -220,6 +229,8 @@ function buildWorkSnapshot(
     language: state.language,
     videoDuration: state.videoDuration,
     sceneCount: state.sceneCount,
+    selectedAssetIds: state.selectedAssetIds,
+    assetUsageMode: state.assetUsageMode,
     analysis: state.analysis,
     scenes: state.scenes,
     generatedScenes: state.generatedScenes.map(({ sceneIndex, status, error }) => ({
@@ -326,6 +337,8 @@ export const useStore = create<AppState>((set, get) => ({
       language: work.language,
       videoDuration: work.videoDuration,
       sceneCount: work.sceneCount,
+      selectedAssetIds: work.selectedAssetIds ?? [],
+      assetUsageMode: work.assetUsageMode,
       analysis: work.analysis,
       scenes: work.scenes,
       generatedScenes: work.generatedScenes.map((s) => ({ ...s })),
@@ -374,8 +387,8 @@ export const useStore = create<AppState>((set, get) => ({
     }
   },
 
-  createNewProject: async (name) => {
-    const project = await projectStorage.createProject(name ?? "New Project");
+  createNewProject: async (name, projectType) => {
+    const project = await projectStorage.createProject(name ?? "New Project", projectType);
     set({
       ...initialState,
       currentProjectId: project.id,
@@ -405,6 +418,10 @@ export const useStore = create<AppState>((set, get) => ({
         work.name,
         work.createdAt
       );
+      console.log('[Store] Persisting work with assets:', {
+        selectedAssetIds: snap.selectedAssetIds,
+        assetUsageMode: snap.assetUsageMode
+      });
       await projectStorage.saveWork(state.currentProjectId, snap);
     } catch (e) {
       console.error("Failed to persist work", e);
@@ -449,6 +466,16 @@ export const useStore = create<AppState>((set, get) => ({
     set({ sceneCount });
     get().persistCurrentWork();
   },
+  setSelectedAssetIds: (selectedAssetIds) => {
+    console.log('[Store] setSelectedAssetIds:', selectedAssetIds);
+    set({ selectedAssetIds });
+    get().persistCurrentWork();
+  },
+  setAssetUsageMode: (assetUsageMode) => {
+    console.log('[Store] setAssetUsageMode:', assetUsageMode);
+    set({ assetUsageMode });
+    get().persistCurrentWork();
+  },
 
   setAnalysis: (analysis) => {
     set({ analysis });
@@ -457,8 +484,49 @@ export const useStore = create<AppState>((set, get) => ({
   setAnalysisLoading: (analysisLoading) => set({ analysisLoading }),
   setAnalysisError: (analysisError) => set({ analysisError }),
 
-  setScenes: (scenes) => {
+  setScenes: async (scenes) => {
+    const state = get();
     set({ scenes });
+    
+    // Initialize generatedScenes
+    const generatedScenes: GeneratedScene[] = scenes.map((_, i) => ({
+      sceneIndex: i,
+      status: "pending" as const,
+    }));
+    
+    // DIRECT MODE: Auto-load asset images
+    if (state.assetUsageMode === "direct" && state.selectedAssetIds.length > 0 && state.currentProjectId) {
+      console.log(`🎯 [STORE] Direct mode: Auto-loading ${scenes.length} asset images`);
+      
+      const token = getAuthToken();
+      const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
+      
+      for (let i = 0; i < scenes.length; i++) {
+        const assetIndex = i % state.selectedAssetIds.length;
+        const assetId = state.selectedAssetIds[assetIndex];
+        
+        try {
+          const assetUrl = projectStorage.getProjectAssetUrl(state.currentProjectId, assetId);
+          const res = await fetch(assetUrl, { headers });
+          
+          if (res.ok) {
+            const blob = await res.blob();
+            const blobUrl = URL.createObjectURL(blob);
+            generatedScenes[i] = {
+              sceneIndex: i,
+              imageUrl: blobUrl,
+              remoteImageUrl: assetUrl,
+              status: "image_ready",
+            };
+            console.log(`✅ [STORE] Scene ${i} loaded asset ${assetIndex + 1}/${state.selectedAssetIds.length}`);
+          }
+        } catch (err) {
+          console.error(`❌ [STORE] Failed to load asset for scene ${i}:`, err);
+        }
+      }
+    }
+    
+    set({ generatedScenes });
     get().persistCurrentWork();
   },
   updateScene: (index, update) =>
@@ -505,13 +573,46 @@ export const useStore = create<AppState>((set, get) => ({
     const state = get();
     const scene = state.scenes[sceneIndex];
     if (!scene) return;
-    const { currentProjectId, currentWorkId, workImageSystemPrompt, projectImageSystemPrompt } =
+    const { currentProjectId, currentWorkId, workImageSystemPrompt, projectImageSystemPrompt, assetUsageMode, selectedAssetIds } =
       state;
+    
     try {
       state.updateGeneratedScene(sceneIndex, {
         status: "generating_image",
         error: undefined,
       });
+
+      // DIRECT MODE: Load asset image directly
+      if (assetUsageMode === "direct" && selectedAssetIds.length > 0 && currentProjectId) {
+        console.log(`🎯 [FRONTEND] Direct mode - loading asset for scene ${sceneIndex}`);
+        
+        const assetIndex = sceneIndex % selectedAssetIds.length;
+        const assetId = selectedAssetIds[assetIndex];
+        
+        // Fetch asset with authentication
+        const token = getAuthToken();
+        const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
+        const assetUrl = projectStorage.getProjectAssetUrl(currentProjectId, assetId);
+        const res = await fetch(assetUrl, { headers });
+        
+        if (!res.ok) {
+          throw new Error(`Failed to load asset: ${res.status} ${res.statusText}`);
+        }
+        
+        const blob = await res.blob();
+        const blobUrl = URL.createObjectURL(blob);
+        
+        state.updateGeneratedScene(sceneIndex, {
+          imageUrl: blobUrl,
+          remoteImageUrl: assetUrl, // Keep original URL for video generation
+          status: "image_ready",
+        });
+        
+        console.log(`✅ [FRONTEND] Scene ${sceneIndex} loaded asset ${assetIndex + 1}/${selectedAssetIds.length}`);
+        return;
+      }
+
+      // NORMAL/REFERENCE MODE: Generate image with AI
       const imageInstruction =
         workImageSystemPrompt.trim() || projectImageSystemPrompt?.trim() || "";
       const remoteImageUrl = await apiGenerateImage(
@@ -549,24 +650,56 @@ export const useStore = create<AppState>((set, get) => ({
     const scene = state.scenes[sceneIndex];
     const gs = state.generatedScenes[sceneIndex];
     if (!scene || !gs || gs.status !== "image_ready") return;
-    const { currentProjectId, currentWorkId, workVideoSystemPrompt, projectVideoSystemPrompt } =
+    const { currentProjectId, currentWorkId, workVideoSystemPrompt, projectVideoSystemPrompt, assetUsageMode } =
       state;
-    const imageUrlForVideo =
-      gs.remoteImageUrl ??
-      (gs.imageUrl?.startsWith("http")
-        ? gs.imageUrl
-        : typeof window !== "undefined" && gs.imageUrl
-          ? `${window.location.origin}${gs.imageUrl.startsWith("/") ? "" : "/"}${gs.imageUrl}`
-          : "");
-    if (!imageUrlForVideo) {
-      state.updateGeneratedScene(sceneIndex, {
-        status: "error",
-        error: "Image URL missing; regenerate image to generate video.",
-      });
-      return;
-    }
+
     try {
       state.updateGeneratedScene(sceneIndex, { status: "generating_video" });
+
+      // DIRECT MODE: Use work-based endpoint (backend handles asset → video)
+      if (assetUsageMode === "direct" && currentProjectId && currentWorkId) {
+        console.log(`🎯 [FRONTEND] Direct mode - generating video from asset for scene ${sceneIndex}`);
+        
+        const videoHeaders = getProviderHeaders("video");
+        const imageHeaders = getProviderHeaders("image");
+        const combinedHeaders = {
+          ...videoHeaders,
+          "x-image-provider": imageHeaders["x-image-provider"],
+          "x-image-model-id": imageHeaders["x-model-id"],
+        };
+        
+        const { videoUrl } = await projectStorage.generateWorkScene(
+          currentProjectId,
+          currentWorkId,
+          sceneIndex,
+          combinedHeaders
+        );
+        
+        state.updateGeneratedScene(sceneIndex, {
+          videoUrl,
+          status: "done",
+        });
+        
+        console.log(`✅ [FRONTEND] Direct mode video generated for scene ${sceneIndex}`);
+        return;
+      }
+
+      // NORMAL/REFERENCE MODE: Generate video from AI image
+      const imageUrlForVideo =
+        gs.remoteImageUrl ??
+        (gs.imageUrl?.startsWith("http")
+          ? gs.imageUrl
+          : typeof window !== "undefined" && gs.imageUrl
+            ? `${window.location.origin}${gs.imageUrl.startsWith("/") ? "" : "/"}${gs.imageUrl}`
+            : "");
+      if (!imageUrlForVideo) {
+        state.updateGeneratedScene(sceneIndex, {
+          status: "error",
+          error: "Image URL missing; regenerate image to generate video.",
+        });
+        return;
+      }
+
       const videoInstruction =
         workVideoSystemPrompt.trim() || projectVideoSystemPrompt?.trim() || "";
       const remoteVideoUrl = await apiGenerateVideo(

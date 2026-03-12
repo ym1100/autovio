@@ -4,6 +4,8 @@ import {
   DEFAULT_SCENARIO_SYSTEM_PROMPT,
   DEFAULT_IMAGE_INSTRUCTION,
   DEFAULT_VIDEO_INSTRUCTION,
+  ProjectType,
+  getProjectPreset,
 } from "@autovio/shared";
 import { ProjectModel, toProject, WorkModel, AssetModel } from "../db/index.js";
 import { projectDir } from "./path.js";
@@ -40,6 +42,7 @@ export async function saveProject(project: Project, userId?: string): Promise<vo
     name: project.name,
     createdAt: project.createdAt,
     updatedAt: project.updatedAt,
+    projectType: project.projectType ?? ProjectType.BLANK,
     systemPrompt: project.systemPrompt,
     knowledge: project.knowledge,
     analyzerPrompt: project.analyzerPrompt ?? "",
@@ -55,6 +58,7 @@ export async function saveProject(project: Project, userId?: string): Promise<vo
 }
 
 export interface CreateProjectOptions {
+  projectType?: ProjectType;
   systemPrompt?: string;
   knowledge?: string;
   styleGuide?: Project["styleGuide"];
@@ -69,18 +73,25 @@ export async function createProject(
 ): Promise<Project> {
   const id = "proj_" + Date.now() + "_" + Math.random().toString(36).slice(2, 9);
   const now = Date.now();
+  
+  // Get preset based on project type
+  const projectType = options?.projectType ?? ProjectType.BLANK;
+  const preset = getProjectPreset(projectType);
+  
+  // Use preset defaults, but allow override from options
   const project: Project = {
     id,
     userId,
     name: name || "Yeni Proje",
     createdAt: now,
     updatedAt: now,
-    systemPrompt: options?.systemPrompt ?? DEFAULT_SCENARIO_SYSTEM_PROMPT,
+    projectType,
+    systemPrompt: options?.systemPrompt ?? preset.systemPrompt,
     knowledge: options?.knowledge ?? "",
     analyzerPrompt: "",
-    imageSystemPrompt: options?.imageSystemPrompt ?? DEFAULT_IMAGE_INSTRUCTION,
-    videoSystemPrompt: options?.videoSystemPrompt ?? DEFAULT_VIDEO_INSTRUCTION,
-    styleGuide: options?.styleGuide,
+    imageSystemPrompt: options?.imageSystemPrompt ?? preset.imageSystemPrompt,
+    videoSystemPrompt: options?.videoSystemPrompt ?? preset.videoSystemPrompt,
+    styleGuide: options?.styleGuide ?? preset.defaultStyleGuide,
   };
   await saveProject(project);
   return project;

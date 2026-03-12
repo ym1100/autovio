@@ -1,5 +1,5 @@
 import mongoose, { Schema } from "mongoose";
-import type { WorkSnapshot, AnalysisResult, ScenarioScene, GeneratedSceneSnapshot, PipelineStep, EditorStateSnapshot } from "@autovio/shared";
+import type { WorkSnapshot, AnalysisResult, ScenarioScene, GeneratedSceneSnapshot, PipelineStep, EditorStateSnapshot, AssetUsageMode } from "@autovio/shared";
 
 export interface WorkDocument {
   _id: string;
@@ -24,6 +24,8 @@ export interface WorkDocument {
   scenes: ScenarioScene[];
   generatedScenes: GeneratedSceneSnapshot[];
   editorState?: EditorStateSnapshot;
+  selectedAssetIds?: string[];
+  assetUsageMode?: AssetUsageMode;
 }
 
 const SceneAnalysisSchema = new Schema(
@@ -162,6 +164,8 @@ const WorkSchema = new Schema(
     scenes: [ScenarioSceneSchema],
     generatedScenes: [GeneratedSceneSnapshotSchema],
     editorState: { type: EditorStateSnapshotSchema },
+    selectedAssetIds: [{ type: String }],
+    assetUsageMode: { type: String, enum: ["reference", "direct"] },
   },
   {
     _id: false,
@@ -197,5 +201,7 @@ export function toWorkSnapshot(doc: WorkDocument): WorkSnapshot {
     scenes: doc.scenes as ScenarioScene[],
     generatedScenes: doc.generatedScenes as GeneratedSceneSnapshot[],
     editorState: doc.editorState as EditorStateSnapshot | undefined,
+    selectedAssetIds: doc.selectedAssetIds,
+    assetUsageMode: doc.assetUsageMode,
   };
 }

@@ -2,11 +2,13 @@ import { Router } from "express";
 import { z } from "zod";
 import { getImageProvider, getVideoProvider } from "../providers/registry.js";
 import { isStyleGuideEmpty } from "@autovio/shared";
-import type { StyleGuide } from "@autovio/shared";
+import type { StyleGuide, AssetUsageMode, ProjectAsset } from "@autovio/shared";
 import { DEFAULT_IMAGE_INSTRUCTION, DEFAULT_VIDEO_INSTRUCTION } from "@autovio/shared";
 import { buildImageStylePrefix } from "../prompts/image.js";
 import { buildVideoStylePrefix } from "../prompts/video.js";
 import { authenticate, requireScope } from "../middleware/auth.js";
+import { getAssetFilePath } from "../storage/assets.js";
+import fs from "fs/promises";
 
 const router = Router();
 
@@ -104,6 +106,11 @@ export interface GenerateSceneImageAndVideoOptions {
   imageModelId: string | undefined;
   videoProviderId: string;
   videoModelId: string | undefined;
+  // Direct mode options
+  assetUsageMode?: AssetUsageMode;
+  selectedAssets?: ProjectAsset[];
+  sceneIndex?: number;
+  projectId?: string;
 }
 
 /**
@@ -123,26 +130,58 @@ export async function generateSceneImageAndVideo(
     imageModelId,
     videoProviderId,
     videoModelId,
+    assetUsageMode,
+    selectedAssets,
+    sceneIndex,
+    projectId,
   } = options;
 
-  const imageProvider = getImageProvider(imageProviderId);
-  const imgModel = resolveModelId(imageModelId, imageProvider.models);
+  let imageUrl: string;
 
-  let imageFullPrompt = "";
-  if (styleGuide && !isStyleGuideEmpty(styleGuide)) {
-    const prefix = buildImageStylePrefix(styleGuide);
-    if (prefix) imageFullPrompt += prefix + "\n\n";
+  console.log(`🔍 [IMAGE GEN CHECK] assetUsageMode=${assetUsageMode}, selectedAssets=${selectedAssets?.length || 0}, projectId=${projectId}, sceneIndex=${sceneIndex}`);
+
+  // DIRECT MODE: Skip image generation, use asset directly
+  if (assetUsageMode === "direct" && selectedAssets && selectedAssets.length > 0 && projectId !== undefined && sceneIndex !== undefined) {
+    const assetIndex = sceneIndex % selectedAssets.length;
+    const asset = selectedAssets[assetIndex];
+    
+    console.log(`🎯 [DIRECT MODE IMAGE] Using asset ${assetIndex + 1}/${selectedAssets.length}: ${asset.name} (${asset.id})`);
+    
+    // Load asset file and convert to data URL
+    const assetPath = await getAssetFilePath(projectId, asset.id);
+    console.log(`🎯 [DIRECT MODE IMAGE] Asset path: ${assetPath}`);
+    
+    if (!assetPath) {
+      throw new Error(`Asset file not found: ${asset.id}`);
+    }
+    
+    const buffer = await fs.readFile(assetPath);
+    const base64 = buffer.toString("base64");
+    imageUrl = `data:${asset.mimeType};base64,${base64}`;
+    
+    console.log(`🎯 [DIRECT MODE IMAGE] Successfully loaded asset as data URL (${(buffer.length / 1024).toFixed(2)} KB)`);
+  } else {
+    console.log(`⚠️ [NORMAL IMAGE GEN] Mode: ${assetUsageMode}, Assets: ${selectedAssets?.length || 0}, ProjectId: ${projectId}, SceneIndex: ${sceneIndex}`);
+    // NORMAL MODE or REFERENCE MODE: Generate image with AI
+    const imageProvider = getImageProvider(imageProviderId);
+    const imgModel = resolveModelId(imageModelId, imageProvider.models);
+
+    let imageFullPrompt = "";
+    if (styleGuide && !isStyleGuideEmpty(styleGuide)) {
+      const prefix = buildImageStylePrefix(styleGuide);
+      if (prefix) imageFullPrompt += prefix + "\n\n";
+    }
+    const imgInstr = imageInstruction?.trim() || DEFAULT_IMAGE_INSTRUCTION;
+    imageFullPrompt += imgInstr + "\n\n";
+    imageFullPrompt += scene.image_prompt;
+
+    imageUrl = await imageProvider.generate(
+      imageFullPrompt,
+      scene.negative_prompt ?? "",
+      apiKey,
+      imgModel,
+    );
   }
-  const imgInstr = imageInstruction?.trim() || DEFAULT_IMAGE_INSTRUCTION;
-  imageFullPrompt += imgInstr + "\n\n";
-  imageFullPrompt += scene.image_prompt;
-
-  const imageUrl = await imageProvider.generate(
-    imageFullPrompt,
-    scene.negative_prompt ?? "",
-    apiKey,
-    imgModel,
-  );
 
   const videoProvider = getVideoProvider(videoProviderId);
   const vidModel = resolveModelId(videoModelId, videoProvider.models);

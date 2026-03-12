@@ -1,11 +1,14 @@
 import { useEffect, useRef } from "react";
 import { Loader2, ArrowRight, ArrowLeft, AlertCircle, RefreshCw, Trash2 } from "lucide-react";
 import { useStore } from "../../store/useStore";
-import { buildScenario } from "../../api/client";
+import { getProviderHeaders } from "../../api/client";
+import { generateWorkScenario } from "../../storage/projectStorage";
 
 export default function ScenarioStep() {
   const {
     currentStep,
+    currentProjectId,
+    currentWorkId,
     analysis, hasReferenceVideo, mode, productName, productDescription, targetAudience,
     language, videoDuration, sceneCount,
     scenes, scenarioLoading, scenarioError,
@@ -17,28 +20,20 @@ export default function ScenarioStep() {
   const initialFetchDone = useRef(false);
 
   const fetchScenario = () => {
+    if (!currentProjectId || !currentWorkId) {
+      setScenarioError("No project or work selected");
+      return;
+    }
+
     setScenarioLoading(true);
     setScenarioError(null);
 
-    buildScenario(
-      analysis,
-      {
-        mode,
-        product_name: productName || undefined,
-        product_description: productDescription || undefined,
-        target_audience: targetAudience || undefined,
-        language: language || undefined,
-        video_duration: videoDuration,
-        scene_count: sceneCount,
-      },
-      {
-        systemPrompt: workSystemPrompt || undefined,
-        knowledge: projectKnowledge || undefined,
-        styleGuide: projectStyleGuide,
-      }
-    )
-      .then(setScenes)
-      .catch((err) => setScenarioError(err.message))
+    // Get LLM provider headers for scenario generation
+    const providerHeaders = getProviderHeaders("llm");
+
+    generateWorkScenario(currentProjectId, currentWorkId, providerHeaders)
+      .then(async (data) => await setScenes(data.scenes))
+      .catch((err: Error) => setScenarioError(err.message))
       .finally(() => setScenarioLoading(false));
   };
 

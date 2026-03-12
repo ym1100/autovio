@@ -48,6 +48,7 @@ router.post("/", requireScope("projects:write"), async (req, res, next) => {
     const body = req.body ?? {};
     const name = (body.name as string) || "Yeni Proje";
     const project = await createProject(name, userId, {
+      projectType: body.projectType,
       systemPrompt: body.systemPrompt,
       knowledge: body.knowledge,
       styleGuide: body.styleGuide,

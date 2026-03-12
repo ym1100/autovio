@@ -1,10 +1,11 @@
-import { Upload, ArrowRight, AlertTriangle, Settings, Video, PenTool, ChevronDown, ChevronUp, Globe } from "lucide-react";
+import { Upload, ArrowRight, AlertTriangle, Settings, Video, PenTool, ChevronDown, ChevronUp, Globe, Package } from "lucide-react";
 import { useRef, useState } from "react";
 import { useStore } from "../../store/useStore";
 import { getProviderConfig } from "../../api/client";
 import { saveReferenceVideoBlob } from "../../storage/projectStorage";
 import { useToastStore } from "../../store/useToastStore";
 import ExtractFromLandingModal from "../ui/ExtractFromLandingModal";
+import AssetSelector from "../ui/AssetSelector";
 
 function hasApiKeyConfigured(): boolean {
   try {
@@ -28,12 +29,15 @@ export default function InitStep() {
     language, setLanguage,
     videoDuration, setVideoDuration,
     sceneCount, setSceneCount,
+    selectedAssetIds, setSelectedAssetIds,
+    assetUsageMode, setAssetUsageMode,
     setStep, setShowSettings,
     currentProjectId, currentWorkId,
   } = useStore();
 
   const fileRef = useRef<HTMLInputElement>(null);
   const [optionalOpen, setOptionalOpen] = useState(false);
+  const [assetsOpen, setAssetsOpen] = useState(false);
   const [showExtractFromFeature, setShowExtractFromFeature] = useState(false);
   const addToast = useToastStore((s) => s.addToast);
 
@@ -304,6 +308,40 @@ export default function InitStep() {
                 <p className="text-xs text-gray-500 mt-1">AI will create exactly this many scenes when set.</p>
               </div>
             </div>
+          </div>
+        )}
+      </div>
+
+      {/* Project Assets (Optional) */}
+      <div className="border border-gray-700 rounded-xl overflow-hidden">
+        <button
+          type="button"
+          onClick={() => setAssetsOpen(!assetsOpen)}
+          className="w-full flex items-center justify-between gap-4 bg-gray-900/50 hover:bg-gray-800/50 px-4 py-3 transition-colors"
+        >
+          <div className="flex items-center gap-3">
+            <Package size={20} className="text-purple-400" />
+            <div className="text-left">
+              <p className="font-medium text-gray-200">
+                Project Assets
+                {selectedAssetIds.length > 0 && (
+                  <span className="ml-2 text-xs text-purple-400">({selectedAssetIds.length} selected)</span>
+                )}
+              </p>
+              <p className="text-xs text-gray-500">Use your uploaded images in video generation (optional)</p>
+            </div>
+          </div>
+          {assetsOpen ? <ChevronUp size={20} className="text-gray-400" /> : <ChevronDown size={20} className="text-gray-400" />}
+        </button>
+        {assetsOpen && currentProjectId && (
+          <div className="p-4 border-t border-gray-700 bg-gray-900/30">
+            <AssetSelector
+              projectId={currentProjectId}
+              selectedAssetIds={selectedAssetIds}
+              assetUsageMode={assetUsageMode}
+              onSelectedAssetsChange={setSelectedAssetIds}
+              onAssetUsageModeChange={setAssetUsageMode}
+            />
           </div>
         )}
       </div>

@@ -25,6 +25,7 @@ import { workDir } from "../storage/path.js";
 import { authenticate, requireScope } from "../middleware/auth.js";
 import { generateScenario } from "./scenario.js";
 import { generateSceneImageAndVideo } from "./generate.js";
+import { getWorkAssets } from "../utils/asset-integration.js";
 import { applyTemplateLogic } from "./templates.js";
 
 const router = Router({ mergeParams: true });
@@ -144,6 +145,18 @@ router.post("/:workId/scenario", requireScope("ai:generate"), async (req, res, n
       res.status(404).json({ error: "Work not found" });
       return;
     }
+    // Load selected assets
+    const selectedAssets = await getWorkAssets(projectId, work.selectedAssetIds);
+    
+    // Auto-set scene count for Direct mode
+    let sceneCount = work.sceneCount;
+    if (work.assetUsageMode === "direct" && selectedAssets.length > 0) {
+      sceneCount = selectedAssets.length;
+      console.log(`🎯 [DIRECT MODE] Auto-setting scene count to ${sceneCount} (${selectedAssets.length} assets selected)`);
+    }
+    
+    console.log(`🎯 [SCENARIO] Mode: ${work.assetUsageMode}, Assets: ${selectedAssets.length}, Scene Count: ${sceneCount}`);
+    
     const intent = {
       mode: work.mode,
       product_name: work.productName || undefined,
@@ -151,7 +164,7 @@ router.post("/:workId/scenario", requireScope("ai:generate"), async (req, res, n
       target_audience: work.targetAudience || undefined,
       language: work.language || undefined,
       video_duration: work.videoDuration,
-      scene_count: work.sceneCount,
+      scene_count: sceneCount,
     };
     const providerId = (req.headers["x-llm-provider"] as string) || "gemini";
     const modelId = req.headers["x-model-id"] as string | undefined;
@@ -162,6 +175,8 @@ router.post("/:workId/scenario", requireScope("ai:generate"), async (req, res, n
         systemPrompt: work.systemPrompt,
         knowledge: project.knowledge,
         styleGuide: project.styleGuide,
+        selectedAssets,
+        assetUsageMode: work.assetUsageMode,
       },
       apiKey,
       providerId,
@@ -223,6 +238,11 @@ router.post("/:workId/generate/scene/:sceneIndex", requireScope("ai:generate"), 
     const videoProviderId = (req.headers["x-video-provider"] as string) || "gemini";
     const videoModelId = (req.headers["x-video-model-id"] as string) || (req.headers["x-model-id"] as string);
 
+    // Load selected assets for Direct mode
+    const selectedAssets = await getWorkAssets(projectId, work.selectedAssetIds);
+    
+    console.log(`[GENERATE SCENE ${sceneIndex}] Mode: ${work.assetUsageMode}, Assets loaded: ${selectedAssets.length}, Scene index: ${sceneIndex}`);
+
     const { imageUrl: imageDataUrl, videoUrl: videoDataUrl } = await generateSceneImageAndVideo(
       {
         image_prompt: scene.image_prompt,
@@ -239,6 +259,10 @@ router.post("/:workId/generate/scene/:sceneIndex", requireScope("ai:generate"), 
         imageModelId,
         videoProviderId,
         videoModelId,
+        assetUsageMode: work.assetUsageMode,
+        selectedAssets,
+        sceneIndex,
+        projectId,
       },
     );
 

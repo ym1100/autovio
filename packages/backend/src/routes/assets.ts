@@ -78,6 +78,7 @@ router.post("/", requireScope("projects:write"), upload.single("file"), async (r
       return;
     }
     const name = (req.body?.name as string) || file.originalname;
+    const description = req.body?.description as string | undefined;
     let tags: string[] | undefined;
     try {
       const tagsRaw = req.body?.tags;
@@ -97,6 +98,7 @@ router.post("/", requireScope("projects:write"), upload.single("file"), async (r
       },
       name,
       tags,
+      description,
     });
     const baseUrl = `/api/projects/${projectId}/assets`;
     res.status(201).json({

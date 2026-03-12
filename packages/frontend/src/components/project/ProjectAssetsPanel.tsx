@@ -4,7 +4,7 @@ import type { ProjectAsset } from "@autovio/shared";
 import { listProjectAssets, getProjectAssetUrl, deleteProjectAsset } from "../../storage/projectStorage";
 import { getAuthToken } from "../../store/useAuthStore";
 import { useToastStore } from "../../store/useToastStore";
-import AssetUploadDialog from "./AssetUploadDialog";
+import MultiAssetUploadDialog from "./MultiAssetUploadDialog";
 import AssetPreviewModal from "./AssetPreviewModal";
 import ConfirmModal from "../ui/ConfirmModal";
 
@@ -227,7 +227,7 @@ export default function ProjectAssetsPanel({ projectId }: ProjectAssetsPanelProp
         </>
       )}
 
-      <AssetUploadDialog
+      <MultiAssetUploadDialog
         open={showUpload}
         projectId={projectId}
         onClose={() => setShowUpload(false)}

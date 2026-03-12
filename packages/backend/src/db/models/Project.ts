@@ -1,5 +1,5 @@
 import mongoose, { Schema } from "mongoose";
-import type { Project, StyleGuide } from "@autovio/shared";
+import type { Project, StyleGuide, ProjectType } from "@autovio/shared";
 
 export interface ProjectDocument {
   _id: string;
@@ -7,6 +7,7 @@ export interface ProjectDocument {
   name: string;
   createdAt: number;
   updatedAt: number;
+  projectType?: ProjectType;
   systemPrompt: string;
   knowledge: string;
   analyzerPrompt?: string;
@@ -35,6 +36,7 @@ const ProjectSchema = new Schema(
     name: { type: String, required: true },
     createdAt: { type: Number, required: true },
     updatedAt: { type: Number, required: true },
+    projectType: { type: String, enum: ["blank", "saas", "news", "social", "ecommerce", "educational"], default: "blank" },
     systemPrompt: { type: String, required: true },
     knowledge: { type: String, default: "" },
     analyzerPrompt: { type: String, default: "" },
@@ -60,6 +62,7 @@ export function toProject(doc: ProjectDocument): Project {
     name: doc.name,
     createdAt: doc.createdAt,
     updatedAt: doc.updatedAt,
+    projectType: doc.projectType,
     systemPrompt: doc.systemPrompt,
     knowledge: doc.knowledge,
     analyzerPrompt: doc.analyzerPrompt,

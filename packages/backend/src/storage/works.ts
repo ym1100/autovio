@@ -75,6 +75,8 @@ export async function saveWork(projectId: string, snapshot: WorkSnapshot): Promi
       language: snapshot.language,
       videoDuration: snapshot.videoDuration,
       sceneCount: snapshot.sceneCount,
+      selectedAssetIds: snapshot.selectedAssetIds ?? [],
+      assetUsageMode: snapshot.assetUsageMode,
       analysis: snapshot.analysis,
       scenes: snapshot.scenes,
       generatedScenes: snapshot.generatedScenes,

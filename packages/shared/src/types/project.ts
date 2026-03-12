@@ -4,6 +4,24 @@ import type { StyleGuide } from "./style-guide.js";
 
 export type PipelineStep = 0 | 1 | 2 | 3 | 4;
 
+/** Project type determines default prompts and behavior. */
+export enum ProjectType {
+  BLANK = "blank",
+  SAAS = "saas",
+  NEWS = "news",
+  SOCIAL = "social",
+  ECOMMERCE = "ecommerce",
+  EDUCATIONAL = "educational"
+}
+
+/** How assets should be used in video generation. */
+export enum AssetUsageMode {
+  /** Analyze assets with Vision AI and use descriptions as style reference in prompts */
+  REFERENCE = "reference",
+  /** Use actual asset images directly instead of generating new ones */
+  DIRECT = "direct"
+}
+
 export interface GeneratedSceneSnapshot {
   sceneIndex: number;
   imageUrl?: string;
@@ -91,6 +109,8 @@ export interface Project {
   name: string;
   createdAt: number;
   updatedAt: number;
+  /** Project type determines default prompts and asset behavior. */
+  projectType?: ProjectType;
   /** Senaryo (LLM) için varsayılan sistem promptu. */
   systemPrompt: string;
   /** Kullanıcının projeyi anlattığı metin; AI'a sistem promptuna ek olarak gönderilir. */
@@ -128,6 +148,8 @@ export interface ProjectAsset {
   updatedAt: number;
   tags?: string[];
   thumbnail?: string;
+  /** Vision AI generated description (for REFERENCE mode) */
+  description?: string;
 }
 
 /** Proje asset listesi. */
@@ -308,6 +330,11 @@ export interface WorkSnapshot {
 
   /** Editor state: timeline, text overlays, audio, export settings. */
   editorState?: EditorStateSnapshot;
+  
+  /** Selected asset IDs for this work */
+  selectedAssetIds?: string[];
+  /** How to use selected assets in generation */
+  assetUsageMode?: AssetUsageMode;
 }
 
 /** Çalışma listesi için meta. */

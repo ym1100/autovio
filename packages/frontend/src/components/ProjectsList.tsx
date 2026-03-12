@@ -4,6 +4,7 @@ import { useStore } from "../store/useStore";
 import { useToastStore } from "../store/useToastStore";
 import { listProjects, deleteProject } from "../storage/projectStorage";
 import type { ProjectMeta } from "@autovio/shared";
+import { ProjectType, getProjectTypeOptions } from "@autovio/shared";
 import ConfirmModal from "./ui/ConfirmModal";
 import { SkeletonCardList } from "./ui/SkeletonCard";
 
@@ -14,6 +15,7 @@ export default function ProjectsList() {
   const [loading, setLoading] = useState(true);
   const [showNewForm, setShowNewForm] = useState(false);
   const [newProjectName, setNewProjectName] = useState("");
+  const [newProjectType, setNewProjectType] = useState<ProjectType>(ProjectType.BLANK);
   const [creating, setCreating] = useState(false);
   const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
@@ -28,6 +30,7 @@ export default function ProjectsList() {
   useEffect(() => {
     if (showNewForm) {
       setNewProjectName("");
+      setNewProjectType(ProjectType.BLANK);
       setTimeout(() => inputRef.current?.focus(), 0);
     }
   }, [showNewForm]);
@@ -36,7 +39,7 @@ export default function ProjectsList() {
     const name = newProjectName.trim() || "New Project";
     setCreating(true);
     try {
-      await createNewProject(name);
+      await createNewProject(name, newProjectType);
       setShowNewForm(false);
       refresh();
       addToast("Project created", "success");
@@ -83,9 +86,9 @@ export default function ProjectsList() {
       </div>
 
       {showNewForm && (
-        <div className="mb-6 p-4 rounded-lg border border-gray-700 bg-gray-900/50">
-          <label className="block text-sm font-medium text-gray-300 mb-2">Project name</label>
-          <div className="flex gap-2">
+        <div className="mb-6 p-4 rounded-lg border border-gray-700 bg-gray-900/50 space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-300 mb-2">Project name</label>
             <input
               ref={inputRef}
               type="text"
@@ -93,14 +96,46 @@ export default function ProjectsList() {
               onChange={(e) => setNewProjectName(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && handleCreate()}
               placeholder="e.g. Product Launch"
-              className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white placeholder-gray-500 focus:border-purple-500 focus:outline-none"
+              className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white placeholder-gray-500 focus:border-purple-500 focus:outline-none"
             />
+          </div>
+          
+          <div>
+            <label className="block text-sm font-medium text-gray-300 mb-2">Project type</label>
+            <div className="space-y-2">
+              {getProjectTypeOptions().map((option) => (
+                <label
+                  key={option.value}
+                  className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${
+                    newProjectType === option.value
+                      ? "border-purple-500 bg-purple-500/10"
+                      : "border-gray-700 bg-gray-800/50 hover:border-gray-600"
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="projectType"
+                    value={option.value}
+                    checked={newProjectType === option.value}
+                    onChange={(e) => setNewProjectType(e.target.value as ProjectType)}
+                    className="mt-0.5 text-purple-600 focus:ring-purple-500"
+                  />
+                  <div className="flex-1 min-w-0">
+                    <div className="font-medium text-white text-sm">{option.label}</div>
+                    <div className="text-xs text-gray-400 mt-0.5">{option.description}</div>
+                  </div>
+                </label>
+              ))}
+            </div>
+          </div>
+
+          <div className="flex gap-2 pt-2">
             <button
               onClick={handleCreate}
               disabled={creating}
-              className="px-4 py-2 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white rounded-lg font-medium transition-colors"
+              className="flex-1 px-4 py-2 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white rounded-lg font-medium transition-colors"
             >
-              {creating ? "Creating..." : "Create"}
+              {creating ? "Creating..." : "Create Project"}
             </button>
             <button
               onClick={() => setShowNewForm(false)}

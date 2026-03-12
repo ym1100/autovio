@@ -6,3 +6,4 @@ export * from "./types/video.js";
 export * from "./types/project.js";
 export * from "./types/user.js";
 export * from "./types/token.js";
+export * from "./templates/project-presets.js";

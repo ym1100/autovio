@@ -16,6 +16,7 @@ export interface AssetDocument {
   updatedAt: number;
   tags?: string[];
   thumbnail?: string;
+  description?: string;
 }
 
 const AssetSchema = new Schema(
@@ -34,6 +35,7 @@ const AssetSchema = new Schema(
     updatedAt: { type: Number, required: true },
     tags: [{ type: String }],
     thumbnail: { type: String },
+    description: { type: String },
   },
   {
     _id: false,
@@ -61,5 +63,6 @@ export function toProjectAsset(doc: AssetDocument): ProjectAsset {
     updatedAt: doc.updatedAt,
     tags: doc.tags?.length ? doc.tags : undefined,
     thumbnail: doc.thumbnail,
+    description: doc.description,
   };
 }

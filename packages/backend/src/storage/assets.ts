@@ -96,10 +96,11 @@ export interface UploadAssetInput {
   file: { buffer: Buffer; mimetype: string; originalname: string; size: number };
   name?: string;
   tags?: string[];
+  description?: string;
 }
 
 export async function uploadAsset(input: UploadAssetInput): Promise<ProjectAsset> {
-  const { projectId, userId, file, name, tags } = input;
+  const { projectId, userId, file, name, tags, description } = input;
   if (userId && !(await projectExists(projectId, userId))) {
     throw new Error("Project not found");
   }
@@ -130,6 +131,7 @@ export async function uploadAsset(input: UploadAssetInput): Promise<ProjectAsset
     createdAt: now,
     updatedAt: now,
     tags: tags && tags.length > 0 ? tags : undefined,
+    description: description?.trim() || undefined,
   });
 
   const doc = await AssetModel.findById(id).lean();
@@ -157,7 +159,7 @@ export async function deleteAsset(
 export async function updateAssetMeta(
   projectId: string,
   assetId: string,
-  updates: { name?: string; tags?: string[] },
+  updates: { name?: string; tags?: string[]; description?: string },
   userId?: string
 ): Promise<ProjectAsset | null> {
   if (userId && !(await projectExists(projectId, userId))) return null;
@@ -166,6 +168,7 @@ export async function updateAssetMeta(
     {
       ...(updates.name !== undefined && { name: updates.name.trim().slice(0, 200) }),
       ...(updates.tags !== undefined && { tags: updates.tags.length > 0 ? updates.tags : [] }),
+      ...(updates.description !== undefined && { description: updates.description }),
       updatedAt: Date.now(),
     },
     { new: true }

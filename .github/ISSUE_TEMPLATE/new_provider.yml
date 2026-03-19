@@ -1,0 +1,72 @@
+name: New AI Provider
+description: Propose adding support for a new AI provider (image, video, LLM, or vision)
+labels: ["provider", "enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        AutoVio's provider system is designed to be extended. If you want to add a new image, video, LLM, or vision provider, open this issue to discuss it before submitting a PR.
+
+        New providers implement the `IImageProvider` or `IVideoProvider` interface in `packages/backend/src/providers/interfaces.ts`. LLM and vision providers have their own interfaces in the same file.
+
+  - type: input
+    id: provider_name
+    attributes:
+      label: Provider name
+      placeholder: "e.g. Stability AI, Kling, Luma Dream Machine, Mistral"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: provider_type
+    attributes:
+      label: Provider type
+      options:
+        - "Image generation"
+        - "Video generation"
+        - "LLM (scenario generation)"
+        - "Vision (video analysis)"
+    validations:
+      required: true
+
+  - type: input
+    id: api_docs
+    attributes:
+      label: API documentation URL
+      placeholder: "https://..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: motivation
+    attributes:
+      label: Why add this provider?
+      description: What does it offer over existing providers? (quality, cost, speed, unique features, etc.)
+    validations:
+      required: true
+
+  - type: dropdown
+    id: api_access
+    attributes:
+      label: Do you have API access to test with?
+      options:
+        - "Yes — I can test and submit a PR"
+        - "No — requesting community support"
+    validations:
+      required: true
+
+  - type: textarea
+    id: notes
+    attributes:
+      label: Implementation notes
+      description: Any known API quirks, authentication details, or constraints worth noting.
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Checklist
+      options:
+        - label: I have checked that this provider is not already implemented or tracked in another issue
+          required: true
+        - label: The provider has a public API available to third-party developers
+          required: true

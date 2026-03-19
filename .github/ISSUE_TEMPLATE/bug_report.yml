@@ -1,0 +1,98 @@
+name: Bug Report
+description: Something isn't working as expected
+labels: ["bug", "needs triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug. Please fill in as much detail as possible so we can reproduce and fix it quickly.
+
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+      description: A clear description of the bug.
+      placeholder: "When I do X, Y happens instead of Z."
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+      description: Exact steps to reproduce the behavior.
+      placeholder: |
+        1. Create a work with mode 'content_remix'
+        2. Go to Generate step
+        3. Click 'Generate scene 0'
+        4. See error
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What should have happened?
+    validations:
+      required: true
+
+  - type: dropdown
+    id: pipeline_step
+    attributes:
+      label: Pipeline step
+      description: Which step of the pipeline does this affect?
+      options:
+        - "Step 1 — Init"
+        - "Step 2 — Analyze"
+        - "Step 3 — Scenario"
+        - "Step 4 — Generate"
+        - "Step 5 — Editor / Export"
+        - "API / Backend"
+        - "MCP Server"
+        - "Not pipeline-specific"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: provider
+    attributes:
+      label: AI provider (if applicable)
+      options:
+        - "Not provider-specific"
+        - "Google Gemini (LLM)"
+        - "Google Gemini Image"
+        - "Google Veo"
+        - "OpenAI / DALL-E"
+        - "Anthropic Claude"
+        - "Runway"
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Your setup details.
+      placeholder: |
+        - OS: macOS 15 / Ubuntu 24.04 / Windows 11
+        - Runtime: Bun 1.x / Node.js 20
+        - MongoDB: local / Atlas
+        - AutoVio version: v0.1.0
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs or error output
+      description: Paste any backend logs, browser console errors, or API responses.
+      render: shell
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Checklist
+      options:
+        - label: I have searched existing issues and this is not a duplicate
+          required: true
+        - label: I can reproduce this on the latest commit
+          required: true

@@ -171,15 +171,31 @@ bun run dev
 
 ## MCP Server
 
-The [`AutoVio-MCP`](https://github.com/Auto-Vio/autovio-mcp) repo ships a full MCP server with 25+ tools covering the entire AutoVio API. Connect it to Claude Desktop, Cursor, or any MCP-compatible client and generate videos through conversation.
+The [`autovio-mcp`](https://github.com/Auto-Vio/autovio-mcp) package ships a full MCP server with 25+ tools covering the entire AutoVio API. Connect it to Claude Code, Claude Desktop, Cursor, or any MCP-compatible client and generate videos through conversation.
+
+**Claude Code:**
+
+```bash
+claude mcp add autovio-mcp -- npx -y autovio-mcp \
+  --autovio-base-url http://localhost:3001 \
+  --autovio-api-token YOUR_TOKEN \
+  --llm-model gemini-2.5-flash \
+  --llm-api-key YOUR_KEY \
+  --image-model gemini-2.5-flash-image \
+  --image-api-key YOUR_KEY \
+  --video-model veo-3.0-generate-001 \
+  --video-api-key YOUR_KEY
+```
+
+**Claude Desktop / Cursor (`claude_desktop_config.json`):**
 
 ```json
 {
   "mcpServers": {
     "autovio": {
-      "command": "node",
+      "command": "npx",
       "args": [
-        "/path/to/AutoVio-MCP/dist/index.js",
+        "-y", "autovio-mcp",
         "--autovio-base-url", "http://localhost:3001",
         "--autovio-api-token", "YOUR_TOKEN",
         "--llm-model", "gemini-2.5-flash",
